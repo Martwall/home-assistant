@@ -6,7 +6,7 @@
                 "title": "Define deCONZ gateway",
                 "data": {
                     "host": "Host",
-                    "port": "Port (default value: '80')"
+                    "port": "Port"
                 }
             },
             "link": {
@@ -16,7 +16,8 @@
             "options": {
                 "title": "Extra configuration options for deCONZ",
                 "data":{
-                    "allow_clip_sensor": "Allow importing virtual sensors"
+                    "allow_clip_sensor": "Allow importing virtual sensors",
+                    "allow_deconz_groups": "Allow importing deCONZ groups"
                 }
             }
         },

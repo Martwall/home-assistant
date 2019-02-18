@@ -15,7 +15,7 @@ from homeassistant.helpers import discovery
 import homeassistant.helpers.config_validation as cv
 
 
-REQUIREMENTS = ['lakeside==0.7']
+REQUIREMENTS = ['lakeside==0.11']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,13 +43,13 @@ EUFY_DISPATCH = {
     'T1013': 'light',
     'T1201': 'switch',
     'T1202': 'switch',
+    'T1203': 'switch',
     'T1211': 'switch'
 }
 
 
 def setup(hass, config):
     """Set up Eufy devices."""
-    # pylint: disable=import-error
     import lakeside
 
     if CONF_USERNAME in config[DOMAIN] and CONF_PASSWORD in config[DOMAIN]:

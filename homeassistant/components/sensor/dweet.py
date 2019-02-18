@@ -13,7 +13,7 @@ import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (
-    CONF_NAME, CONF_VALUE_TEMPLATE, STATE_UNKNOWN, CONF_UNIT_OF_MEASUREMENT)
+    CONF_NAME, CONF_VALUE_TEMPLATE, CONF_UNIT_OF_MEASUREMENT)
 from homeassistant.helpers.entity import Entity
 
 REQUIREMENTS = ['dweepy==0.3.0']
@@ -34,8 +34,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-# pylint: disable=unused-variable, too-many-function-args
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the Dweet sensor."""
     import dweepy
 
@@ -58,7 +57,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
     dweet = DweetData(device)
 
-    add_devices([DweetSensor(hass, dweet, name, value_template, unit)], True)
+    add_entities([DweetSensor(hass, dweet, name, value_template, unit)], True)
 
 
 class DweetSensor(Entity):
@@ -70,7 +69,7 @@ class DweetSensor(Entity):
         self.dweet = dweet
         self._name = name
         self._value_template = value_template
-        self._state = STATE_UNKNOWN
+        self._state = None
         self._unit_of_measurement = unit_of_measurement
 
     @property
@@ -93,14 +92,14 @@ class DweetSensor(Entity):
         self.dweet.update()
 
         if self.dweet.data is None:
-            self._state = STATE_UNKNOWN
+            self._state = None
         else:
             values = json.dumps(self.dweet.data[0]['content'])
             self._state = self._value_template.render_with_possible_json_value(
-                values, STATE_UNKNOWN)
+                values, None)
 
 
-class DweetData(object):
+class DweetData:
     """The class for handling the data retrieval."""
 
     def __init__(self, device):

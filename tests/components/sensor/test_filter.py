@@ -4,7 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from homeassistant.components.sensor.filter import (
-    LowPassFilter, OutlierFilter, ThrottleFilter, TimeSMAFilter)
+    LowPassFilter, OutlierFilter, ThrottleFilter, TimeSMAFilter,
+    RangeFilter, TimeThrottleFilter)
 import homeassistant.util.dt as dt_util
 from homeassistant.setup import setup_component
 import homeassistant.core as ha
@@ -16,7 +17,7 @@ class TestFilterSensor(unittest.TestCase):
     """Test the Data Filter sensor."""
 
     def setup_method(self, method):
-        """Setup things to be run when tests are started."""
+        """Set up things to be run when tests are started."""
         self.hass = get_test_home_assistant()
         raw_values = [20, 19, 18, 21, 22, 0]
         self.values = []
@@ -98,7 +99,7 @@ class TestFilterSensor(unittest.TestCase):
                     self.hass.block_till_done()
 
                 state = self.hass.states.get('sensor.test')
-                self.assertEqual('17.05', state.state)
+                assert '17.05' == state.state
 
     def test_outlier(self):
         """Test if outlier filter works."""
@@ -108,7 +109,7 @@ class TestFilterSensor(unittest.TestCase):
                              radius=4.0)
         for state in self.values:
             filtered = filt.filter_state(state)
-        self.assertEqual(22, filtered.state)
+        assert 22 == filtered.state
 
     def test_initial_outlier(self):
         """Test issue #13363."""
@@ -119,7 +120,7 @@ class TestFilterSensor(unittest.TestCase):
         out = ha.State('sensor.test_monitored', 4000)
         for state in [out]+self.values:
             filtered = filt.filter_state(state)
-        self.assertEqual(22, filtered.state)
+        assert 22 == filtered.state
 
     def test_lowpass(self):
         """Test if lowpass filter works."""
@@ -129,7 +130,41 @@ class TestFilterSensor(unittest.TestCase):
                              time_constant=10)
         for state in self.values:
             filtered = filt.filter_state(state)
-        self.assertEqual(18.05, filtered.state)
+        assert 18.05 == filtered.state
+
+    def test_range(self):
+        """Test if range filter works."""
+        lower = 10
+        upper = 20
+        filt = RangeFilter(entity=None,
+                           lower_bound=lower,
+                           upper_bound=upper)
+        for unf_state in self.values:
+            unf = float(unf_state.state)
+            filtered = filt.filter_state(unf_state)
+            if unf < lower:
+                assert lower == filtered.state
+            elif unf > upper:
+                assert upper == filtered.state
+            else:
+                assert unf == filtered.state
+
+    def test_range_zero(self):
+        """Test if range filter works with zeroes as bounds."""
+        lower = 0
+        upper = 0
+        filt = RangeFilter(entity=None,
+                           lower_bound=lower,
+                           upper_bound=upper)
+        for unf_state in self.values:
+            unf = float(unf_state.state)
+            filtered = filt.filter_state(unf_state)
+            if unf < lower:
+                assert lower == filtered.state
+            elif unf > upper:
+                assert upper == filtered.state
+            else:
+                assert unf == filtered.state
 
     def test_throttle(self):
         """Test if lowpass filter works."""
@@ -141,7 +176,19 @@ class TestFilterSensor(unittest.TestCase):
             new_state = filt.filter_state(state)
             if not filt.skip_processing:
                 filtered.append(new_state)
-        self.assertEqual([20, 21], [f.state for f in filtered])
+        assert [20, 21] == [f.state for f in filtered]
+
+    def test_time_throttle(self):
+        """Test if lowpass filter works."""
+        filt = TimeThrottleFilter(window_size=timedelta(minutes=2),
+                                  precision=2,
+                                  entity=None)
+        filtered = []
+        for state in self.values:
+            new_state = filt.filter_state(state)
+            if not filt.skip_processing:
+                filtered.append(new_state)
+        assert [20, 18, 22] == [f.state for f in filtered]
 
     def test_time_sma(self):
         """Test if time_sma filter works."""
@@ -151,4 +198,4 @@ class TestFilterSensor(unittest.TestCase):
                              type='last')
         for state in self.values:
             filtered = filt.filter_state(state)
-        self.assertEqual(21.5, filtered.state)
+        assert 21.5 == filtered.state

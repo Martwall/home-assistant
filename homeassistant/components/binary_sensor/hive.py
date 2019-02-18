@@ -5,7 +5,7 @@ For more details about this platform, please refer to the documentation at
 https://home-assistant.io/components/binary_sensor.hive/
 """
 from homeassistant.components.binary_sensor import BinarySensorDevice
-from homeassistant.components.hive import DATA_HIVE
+from homeassistant.components.hive import DATA_HIVE, DOMAIN
 
 DEPENDENCIES = ['hive']
 
@@ -13,13 +13,13 @@ DEVICETYPE_DEVICE_CLASS = {'motionsensor': 'motion',
                            'contactsensor': 'opening'}
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up Hive sensor devices."""
     if discovery_info is None:
         return
     session = hass.data.get(DATA_HIVE)
 
-    add_devices([HiveBinarySensorEntity(session, discovery_info)])
+    add_entities([HiveBinarySensorEntity(session, discovery_info)])
 
 
 class HiveBinarySensorEntity(BinarySensorDevice):
@@ -35,8 +35,23 @@ class HiveBinarySensorEntity(BinarySensorDevice):
         self.attributes = {}
         self.data_updatesource = '{}.{}'.format(self.device_type,
                                                 self.node_id)
-
+        self._unique_id = '{}-{}'.format(self.node_id, self.device_type)
         self.session.entities.append(self)
+
+    @property
+    def unique_id(self):
+        """Return unique ID of entity."""
+        return self._unique_id
+
+    @property
+    def device_info(self):
+        """Return device information."""
+        return {
+            'identifiers': {
+                (DOMAIN, self.unique_id)
+            },
+            'name': self.name
+        }
 
     def handle_update(self, updatesource):
         """Handle the new update request."""

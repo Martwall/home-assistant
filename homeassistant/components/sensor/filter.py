@@ -23,14 +23,16 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.util.decorator import Registry
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_state_change
-import homeassistant.components.history as history
+from homeassistant.components import history
 import homeassistant.util.dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
+FILTER_NAME_RANGE = 'range'
 FILTER_NAME_LOWPASS = 'lowpass'
 FILTER_NAME_OUTLIER = 'outlier'
 FILTER_NAME_THROTTLE = 'throttle'
+FILTER_NAME_TIME_THROTTLE = 'time_throttle'
 FILTER_NAME_TIME_SMA = 'time_simple_moving_average'
 FILTERS = Registry()
 
@@ -40,6 +42,8 @@ CONF_FILTER_WINDOW_SIZE = 'window_size'
 CONF_FILTER_PRECISION = 'precision'
 CONF_FILTER_RADIUS = 'radius'
 CONF_FILTER_TIME_CONSTANT = 'time_constant'
+CONF_FILTER_LOWER_BOUND = 'lower_bound'
+CONF_FILTER_UPPER_BOUND = 'upper_bound'
 CONF_TIME_SMA_TYPE = 'type'
 
 TIME_SMA_LAST = 'last'
@@ -60,7 +64,6 @@ FILTER_SCHEMA = vol.Schema({
                  default=DEFAULT_PRECISION): vol.Coerce(int),
 })
 
-# pylint: disable=redefined-builtin
 FILTER_OUTLIER_SCHEMA = FILTER_SCHEMA.extend({
     vol.Required(CONF_FILTER_NAME): FILTER_NAME_OUTLIER,
     vol.Optional(CONF_FILTER_WINDOW_SIZE,
@@ -75,6 +78,12 @@ FILTER_LOWPASS_SCHEMA = FILTER_SCHEMA.extend({
                  default=DEFAULT_WINDOW_SIZE): vol.Coerce(int),
     vol.Optional(CONF_FILTER_TIME_CONSTANT,
                  default=DEFAULT_FILTER_TIME_CONSTANT): vol.Coerce(int),
+})
+
+FILTER_RANGE_SCHEMA = vol.Schema({
+    vol.Required(CONF_FILTER_NAME): FILTER_NAME_RANGE,
+    vol.Optional(CONF_FILTER_LOWER_BOUND): vol.Coerce(float),
+    vol.Optional(CONF_FILTER_UPPER_BOUND): vol.Coerce(float),
 })
 
 FILTER_TIME_SMA_SCHEMA = FILTER_SCHEMA.extend({
@@ -93,6 +102,12 @@ FILTER_THROTTLE_SCHEMA = FILTER_SCHEMA.extend({
                  default=DEFAULT_WINDOW_SIZE): vol.Coerce(int),
 })
 
+FILTER_TIME_THROTTLE_SCHEMA = FILTER_SCHEMA.extend({
+    vol.Required(CONF_FILTER_NAME): FILTER_NAME_TIME_THROTTLE,
+    vol.Required(CONF_FILTER_WINDOW_SIZE): vol.All(cv.time_period,
+                                                   cv.positive_timedelta)
+})
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_ENTITY_ID): cv.entity_id,
     vol.Optional(CONF_NAME): cv.string,
@@ -100,11 +115,13 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
                                         [vol.Any(FILTER_OUTLIER_SCHEMA,
                                                  FILTER_LOWPASS_SCHEMA,
                                                  FILTER_TIME_SMA_SCHEMA,
-                                                 FILTER_THROTTLE_SCHEMA)])
+                                                 FILTER_THROTTLE_SCHEMA,
+                                                 FILTER_TIME_THROTTLE_SCHEMA,
+                                                 FILTER_RANGE_SCHEMA)])
 })
 
 
-async def async_setup_platform(hass, config, async_add_devices,
+async def async_setup_platform(hass, config, async_add_entities,
                                discovery_info=None):
     """Set up the template sensors."""
     name = config.get(CONF_NAME)
@@ -114,7 +131,7 @@ async def async_setup_platform(hass, config, async_add_devices,
         entity=entity_id, **_filter)
                for _filter in config[CONF_FILTERS]]
 
-    async_add_devices([SensorFilter(name, entity_id, filters)])
+    async_add_entities([SensorFilter(name, entity_id, filters)])
 
 
 class SensorFilter(Entity):
@@ -248,7 +265,7 @@ class SensorFilter(Entity):
         return state_attr
 
 
-class FilterState(object):
+class FilterState:
     """State abstraction for filter usage."""
 
     def __init__(self, state):
@@ -273,7 +290,7 @@ class FilterState(object):
         return "{} : {}".format(self.timestamp, self.state)
 
 
-class Filter(object):
+class Filter:
     """Filter skeleton.
 
     Args:
@@ -322,6 +339,51 @@ class Filter(object):
         filtered.set_precision(self.precision)
         self.states.append(copy(filtered))
         new_state.state = filtered.state
+        return new_state
+
+
+@FILTERS.register(FILTER_NAME_RANGE)
+class RangeFilter(Filter):
+    """Range filter.
+
+    Determines if new state is in the range of upper_bound and lower_bound.
+    If not inside, lower or upper bound is returned instead.
+
+    Args:
+        upper_bound (float): band upper bound
+        lower_bound (float): band lower bound
+    """
+
+    def __init__(self, entity,
+                 lower_bound=None, upper_bound=None):
+        """Initialize Filter."""
+        super().__init__(FILTER_NAME_RANGE, entity=entity)
+        self._lower_bound = lower_bound
+        self._upper_bound = upper_bound
+        self._stats_internal = Counter()
+
+    def _filter_state(self, new_state):
+        """Implement the range filter."""
+        if (self._upper_bound is not None
+                and new_state.state > self._upper_bound):
+
+            self._stats_internal['erasures_up'] += 1
+
+            _LOGGER.debug("Upper outlier nr. %s in %s: %s",
+                          self._stats_internal['erasures_up'],
+                          self._entity, new_state)
+            new_state.state = self._upper_bound
+
+        elif (self._lower_bound is not None
+              and new_state.state < self._lower_bound):
+
+            self._stats_internal['erasures_low'] += 1
+
+            _LOGGER.debug("Lower outlier nr. %s in %s: %s",
+                          self._stats_internal['erasures_low'],
+                          self._entity, new_state)
+            new_state.state = self._lower_bound
+
         return new_state
 
 
@@ -390,10 +452,11 @@ class TimeSMAFilter(Filter):
     The window_size is determined by time, and SMA is time weighted.
 
     Args:
-        variant (enum): type of argorithm used to connect discrete values
+        type (enum): type of algorithm used to connect discrete values
     """
 
-    def __init__(self, window_size, precision, entity, type):
+    def __init__(self, window_size, precision, entity,
+                 type):  # pylint: disable=redefined-builtin
         """Initialize Filter."""
         super().__init__(FILTER_NAME_TIME_SMA, window_size, precision, entity)
         self._time_window = window_size
@@ -442,6 +505,32 @@ class ThrottleFilter(Filter):
         """Implement the throttle filter."""
         if not self.states or len(self.states) == self.states.maxlen:
             self.states.clear()
+            self._skip_processing = False
+        else:
+            self._skip_processing = True
+
+        return new_state
+
+
+@FILTERS.register(FILTER_NAME_TIME_THROTTLE)
+class TimeThrottleFilter(Filter):
+    """Time Throttle Filter.
+
+    One sample per time period.
+    """
+
+    def __init__(self, window_size, precision, entity):
+        """Initialize Filter."""
+        super().__init__(FILTER_NAME_TIME_THROTTLE,
+                         window_size, precision, entity)
+        self._time_window = window_size
+        self._last_emitted_at = None
+
+    def _filter_state(self, new_state):
+        """Implement the filter."""
+        window_start = new_state.timestamp - self._time_window
+        if not self._last_emitted_at or self._last_emitted_at <= window_start:
+            self._last_emitted_at = new_state.timestamp
             self._skip_processing = False
         else:
             self._skip_processing = True

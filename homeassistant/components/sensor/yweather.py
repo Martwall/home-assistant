@@ -12,7 +12,7 @@ import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (
-    TEMP_CELSIUS, CONF_MONITORED_CONDITIONS, CONF_NAME, STATE_UNKNOWN,
+    TEMP_CELSIUS, CONF_MONITORED_CONDITIONS, CONF_NAME,
     ATTR_ATTRIBUTION)
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
@@ -51,7 +51,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the Yahoo! weather sensor."""
     from yahooweather import get_woeid, UNIT_C, UNIT_F
 
@@ -88,7 +88,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     for variable in config[CONF_MONITORED_CONDITIONS]:
         dev.append(YahooWeatherSensor(yahoo_api, name, forecast, variable))
 
-    add_devices(dev, True)
+    add_entities(dev, True)
 
 
 class YahooWeatherSensor(Entity):
@@ -99,7 +99,7 @@ class YahooWeatherSensor(Entity):
         self._client = name
         self._name = SENSOR_TYPES[sensor_type][0]
         self._type = sensor_type
-        self._state = STATE_UNKNOWN
+        self._state = None
         self._unit = SENSOR_TYPES[sensor_type][1]
         self._data = weather_data
         self._forecast = forecast
@@ -174,7 +174,7 @@ class YahooWeatherSensor(Entity):
                 float(self._data.yahoo.Atmosphere['visibility'])/1.61, 2)
 
 
-class YahooWeatherData(object):
+class YahooWeatherData:
     """Handle Yahoo! API object and limit updates."""
 
     def __init__(self, woeid, temp_unit):

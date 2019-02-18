@@ -2,13 +2,13 @@
 
 import voluptuous as vol
 
-from homeassistant import config_entries, data_entry_flow
+from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.const import CONF_API_KEY, CONF_HOST, CONF_PORT
 from homeassistant.helpers import aiohttp_client
-from homeassistant.util.json import load_json
 
-from .const import CONF_ALLOW_CLIP_SENSOR, CONFIG_FILE, DOMAIN
+from .const import (
+    CONF_ALLOW_DECONZ_GROUPS, CONF_ALLOW_CLIP_SENSOR, DEFAULT_PORT, DOMAIN)
 
 CONF_BRIDGEID = 'bridgeid'
 
@@ -21,15 +21,20 @@ def configured_hosts(hass):
 
 
 @config_entries.HANDLERS.register(DOMAIN)
-class DeconzFlowHandler(data_entry_flow.FlowHandler):
+class DeconzFlowHandler(config_entries.ConfigFlow):
     """Handle a deCONZ config flow."""
 
     VERSION = 1
+    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_PUSH
 
     def __init__(self):
         """Initialize the deCONZ config flow."""
         self.bridges = []
         self.deconz_config = {}
+
+    async def async_step_user(self, user_input=None):
+        """Handle a flow initialized by the user."""
+        return await self.async_step_init(user_input)
 
     async def async_step_init(self, user_input=None):
         """Handle a deCONZ config flow start.
@@ -48,6 +53,8 @@ class DeconzFlowHandler(data_entry_flow.FlowHandler):
                 if bridge[CONF_HOST] == user_input[CONF_HOST]:
                     self.deconz_config = bridge
                     return await self.async_step_link()
+            self.deconz_config = user_input
+            return await self.async_step_link()
 
         session = aiohttp_client.async_get_clientsession(self.hass)
         self.bridges = await async_discovery(session)
@@ -55,7 +62,8 @@ class DeconzFlowHandler(data_entry_flow.FlowHandler):
         if len(self.bridges) == 1:
             self.deconz_config = self.bridges[0]
             return await self.async_step_link()
-        elif len(self.bridges) > 1:
+
+        if len(self.bridges) > 1:
             hosts = []
             for bridge in self.bridges:
                 hosts.append(bridge[CONF_HOST])
@@ -66,8 +74,12 @@ class DeconzFlowHandler(data_entry_flow.FlowHandler):
                 })
             )
 
-        return self.async_abort(
-            reason='no_bridges'
+        return self.async_show_form(
+            step_id='user',
+            data_schema=vol.Schema({
+                vol.Required(CONF_HOST): str,
+                vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
+            }),
         )
 
     async def async_step_link(self, user_input=None):
@@ -94,12 +106,15 @@ class DeconzFlowHandler(data_entry_flow.FlowHandler):
         """Extra options for deCONZ.
 
         CONF_CLIP_SENSOR -- Allow user to choose if they want clip sensors.
+        CONF_DECONZ_GROUPS -- Allow user to choose if they want deCONZ groups.
         """
         from pydeconz.utils import async_get_bridgeid
 
         if user_input is not None:
             self.deconz_config[CONF_ALLOW_CLIP_SENSOR] = \
                 user_input[CONF_ALLOW_CLIP_SENSOR]
+            self.deconz_config[CONF_ALLOW_DECONZ_GROUPS] = \
+                user_input[CONF_ALLOW_DECONZ_GROUPS]
 
             if CONF_BRIDGEID not in self.deconz_config:
                 session = aiohttp_client.async_get_clientsession(self.hass)
@@ -115,6 +130,7 @@ class DeconzFlowHandler(data_entry_flow.FlowHandler):
             step_id='options',
             data_schema=vol.Schema({
                 vol.Optional(CONF_ALLOW_CLIP_SENSOR): bool,
+                vol.Optional(CONF_ALLOW_DECONZ_GROUPS): bool,
             }),
         )
 
@@ -127,13 +143,6 @@ class DeconzFlowHandler(data_entry_flow.FlowHandler):
         deconz_config[CONF_HOST] = discovery_info.get(CONF_HOST)
         deconz_config[CONF_PORT] = discovery_info.get(CONF_PORT)
         deconz_config[CONF_BRIDGEID] = discovery_info.get('serial')
-
-        config_file = await self.hass.async_add_job(
-            load_json, self.hass.config.path(CONFIG_FILE))
-        if config_file and \
-           config_file[CONF_HOST] == deconz_config[CONF_HOST] and \
-           CONF_API_KEY in config_file:
-            deconz_config[CONF_API_KEY] = config_file[CONF_API_KEY]
 
         return await self.async_step_import(deconz_config)
 
@@ -157,8 +166,6 @@ class DeconzFlowHandler(data_entry_flow.FlowHandler):
         if CONF_API_KEY not in import_config:
             return await self.async_step_link()
 
-        self.deconz_config[CONF_ALLOW_CLIP_SENSOR] = True
-        return self.async_create_entry(
-            title='deCONZ-' + self.deconz_config[CONF_BRIDGEID],
-            data=self.deconz_config
-        )
+        user_input = {CONF_ALLOW_CLIP_SENSOR: True,
+                      CONF_ALLOW_DECONZ_GROUPS: True}
+        return await self.async_step_options(user_input=user_input)

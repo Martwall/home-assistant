@@ -10,7 +10,7 @@ _LOGGER = logging.getLogger(__name__)
 ATTR_CURTAIN_LEVEL = 'curtain_level'
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Perform the setup for Xiaomi devices."""
     devices = []
     for (_, gateway) in hass.data[PY_XIAOMI_GATEWAY].gateways.items():
@@ -18,10 +18,8 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
             model = device['model']
             if model == 'curtain':
                 devices.append(XiaomiGenericCover(device, "Curtain",
-                                                  {'status': 'status',
-                                                   'pos': 'curtain_level'},
-                                                  gateway))
-    add_devices(devices)
+                                                  'status', gateway))
+    add_entities(devices)
 
 
 class XiaomiGenericCover(XiaomiDevice, CoverDevice):
@@ -45,20 +43,20 @@ class XiaomiGenericCover(XiaomiDevice, CoverDevice):
 
     def close_cover(self, **kwargs):
         """Close the cover."""
-        self._write_to_hub(self._sid, **{self._data_key['status']: 'close'})
+        self._write_to_hub(self._sid, **{self._data_key: 'close'})
 
     def open_cover(self, **kwargs):
         """Open the cover."""
-        self._write_to_hub(self._sid, **{self._data_key['status']: 'open'})
+        self._write_to_hub(self._sid, **{self._data_key: 'open'})
 
     def stop_cover(self, **kwargs):
         """Stop the cover."""
-        self._write_to_hub(self._sid, **{self._data_key['status']: 'stop'})
+        self._write_to_hub(self._sid, **{self._data_key: 'stop'})
 
     def set_cover_position(self, **kwargs):
         """Move the cover to a specific position."""
         position = kwargs.get(ATTR_POSITION)
-        self._write_to_hub(self._sid, **{self._data_key['pos']: str(position)})
+        self._write_to_hub(self._sid, **{ATTR_CURTAIN_LEVEL: str(position)})
 
     def parse_data(self, data, raw_data):
         """Parse data sent by gateway."""

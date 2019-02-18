@@ -9,17 +9,17 @@ import logging
 
 import voluptuous as vol
 
+from homeassistant import util
 from homeassistant.components.media_player import (
     PLATFORM_SCHEMA, SUPPORT_NEXT_TRACK, SUPPORT_PREVIOUS_TRACK,
     SUPPORT_SELECT_SOURCE, SUPPORT_TURN_OFF, SUPPORT_TURN_ON,
-    SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_STEP, MediaPlayerDevice)
+    SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET, SUPPORT_VOLUME_STEP,
+    MediaPlayerDevice)
 from homeassistant.const import (
-    CONF_ACCESS_TOKEN, CONF_HOST, CONF_NAME, STATE_OFF, STATE_ON,
-    STATE_UNKNOWN)
+    CONF_ACCESS_TOKEN, CONF_HOST, CONF_NAME, STATE_OFF, STATE_ON)
 from homeassistant.helpers import config_validation as cv
-import homeassistant.util as util
 
-REQUIREMENTS = ['pyvizio==0.0.3']
+REQUIREMENTS = ['pyvizio==0.0.4']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +39,8 @@ MIN_TIME_BETWEEN_SCANS = timedelta(seconds=10)
 SUPPORTED_COMMANDS = SUPPORT_TURN_ON | SUPPORT_TURN_OFF \
                      | SUPPORT_SELECT_SOURCE \
                      | SUPPORT_NEXT_TRACK | SUPPORT_PREVIOUS_TRACK \
-                     | SUPPORT_VOLUME_MUTE | SUPPORT_VOLUME_STEP
+                     | SUPPORT_VOLUME_MUTE | SUPPORT_VOLUME_STEP \
+                     | SUPPORT_VOLUME_SET
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_HOST): cv.string,
@@ -51,7 +52,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the VizioTV media player platform."""
     host = config.get(CONF_HOST)
     token = config.get(CONF_ACCESS_TOKEN)
@@ -60,7 +61,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
     device = VizioDevice(host, token, name, volume_step)
     if device.validate_setup() is False:
-        _LOGGER.error("Failed to setup Vizio TV platform, "
+        _LOGGER.error("Failed to set up Vizio TV platform, "
                       "please check if host and API key are correct")
         return
 
@@ -69,7 +70,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         _LOGGER.warning("InsecureRequestWarning is disabled "
                         "because of Vizio platform configuration")
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    add_devices([device], True)
+    add_entities([device], True)
 
 
 class VizioDevice(MediaPlayerDevice):
@@ -80,7 +81,7 @@ class VizioDevice(MediaPlayerDevice):
         import pyvizio
         self._device = pyvizio.Vizio(DEVICE_ID, host, DEFAULT_NAME, token)
         self._name = name
-        self._state = STATE_UNKNOWN
+        self._state = None
         self._volume_level = None
         self._volume_step = volume_step
         self._current_input = None
@@ -91,14 +92,16 @@ class VizioDevice(MediaPlayerDevice):
         """Retrieve latest state of the TV."""
         is_on = self._device.get_power_state()
         if is_on is None:
-            self._state = STATE_UNKNOWN
+            self._state = None
             return
-        elif is_on is False:
+        if is_on is False:
             self._state = STATE_OFF
         else:
             self._state = STATE_ON
 
-        self._volume_level = self._device.get_current_volume()
+        volume = self._device.get_current_volume()
+        if volume is not None:
+            self._volume_level = float(volume) / 100.
         input_ = self._device.get_current_input()
         if input_ is not None:
             self._current_input = input_.meta_name
@@ -167,12 +170,26 @@ class VizioDevice(MediaPlayerDevice):
 
     def volume_up(self):
         """Increasing volume of the TV."""
+        self._volume_level += self._volume_step / 100.
         self._device.vol_up(num=self._volume_step)
 
     def volume_down(self):
         """Decreasing volume of the TV."""
+        self._volume_level -= self._volume_step / 100.
         self._device.vol_down(num=self._volume_step)
 
     def validate_setup(self):
         """Validate if host is available and key is correct."""
         return self._device.get_current_volume() is not None
+
+    def set_volume_level(self, volume):
+        """Set volume level."""
+        if self._volume_level is not None:
+            if volume > self._volume_level:
+                num = int(100*(volume - self._volume_level))
+                self._volume_level = volume
+                self._device.vol_up(num=num)
+            elif volume < self._volume_level:
+                num = int(100*(self._volume_level - volume))
+                self._volume_level = volume
+                self._device.vol_down(num=num)

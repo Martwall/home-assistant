@@ -11,19 +11,18 @@ import homeassistant.components.alarm_control_panel as alarm
 from homeassistant.components.verisure import CONF_ALARM, CONF_CODE_DIGITS
 from homeassistant.components.verisure import HUB as hub
 from homeassistant.const import (
-    STATE_ALARM_ARMED_AWAY, STATE_ALARM_ARMED_HOME, STATE_ALARM_DISARMED,
-    STATE_UNKNOWN)
+    STATE_ALARM_ARMED_AWAY, STATE_ALARM_ARMED_HOME, STATE_ALARM_DISARMED)
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the Verisure platform."""
     alarms = []
     if int(hub.config.get(CONF_ALARM, 1)):
         hub.update_overview()
         alarms.append(VerisureAlarm())
-    add_devices(alarms)
+    add_entities(alarms)
 
 
 def set_arm_state(state, code=None):
@@ -44,7 +43,7 @@ class VerisureAlarm(alarm.AlarmControlPanel):
 
     def __init__(self):
         """Initialize the Verisure alarm panel."""
-        self._state = STATE_UNKNOWN
+        self._state = None
         self._digits = hub.config.get(CONF_CODE_DIGITS)
         self._changed_by = None
 
@@ -61,7 +60,7 @@ class VerisureAlarm(alarm.AlarmControlPanel):
     @property
     def code_format(self):
         """Return one or more digits/characters."""
-        return 'Number'
+        return alarm.FORMAT_NUMBER
 
     @property
     def changed_by(self):

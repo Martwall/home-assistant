@@ -8,7 +8,7 @@ import logging
 
 import voluptuous as vol
 
-import homeassistant.components.scsgate as scsgate
+from homeassistant.components import scsgate
 from homeassistant.components.light import (Light, PLATFORM_SCHEMA)
 from homeassistant.const import (
     ATTR_ENTITY_ID, ATTR_STATE, CONF_DEVICES, CONF_NAME)
@@ -19,11 +19,12 @@ _LOGGER = logging.getLogger(__name__)
 DEPENDENCIES = ['scsgate']
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
-    vol.Required(CONF_DEVICES): vol.Schema({cv.slug: scsgate.SCSGATE_SCHEMA}),
+    vol.Required(CONF_DEVICES):
+        cv.schema_with_slug_keys(scsgate.SCSGATE_SCHEMA),
 })
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the SCSGate switches."""
     devices = config.get(CONF_DEVICES)
     lights = []
@@ -42,7 +43,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
             light = SCSGateLight(name=name, scs_id=scs_id, logger=logger)
             lights.append(light)
 
-    add_devices(lights)
+    add_entities(lights)
     scsgate.SCSGATE.add_devices_to_register(lights)
 
 

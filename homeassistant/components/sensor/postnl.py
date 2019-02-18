@@ -35,8 +35,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-# pylint: disable=unused-argument
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the PostNL sensor platform."""
     from postnl_api import PostNL_API, UnauthorizedException
 
@@ -51,7 +50,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         _LOGGER.exception("Can't connect to the PostNL webservice")
         return
 
-    add_devices([PostNLSensor(api, name)], True)
+    add_entities([PostNLSensor(api, name)], True)
 
 
 class PostNLSensor(Entity):
@@ -60,7 +59,9 @@ class PostNLSensor(Entity):
     def __init__(self, api, name):
         """Initialize the PostNL sensor."""
         self._name = name
-        self._attributes = None
+        self._attributes = {
+            ATTR_ATTRIBUTION: ATTRIBUTION,
+        }
         self._state = None
         self._api = api
 
@@ -77,7 +78,7 @@ class PostNLSensor(Entity):
     @property
     def unit_of_measurement(self):
         """Return the unit of measurement of this entity, if any."""
-        return 'package(s)'
+        return 'packages'
 
     @property
     def device_state_attributes(self):
@@ -93,18 +94,5 @@ class PostNLSensor(Entity):
     def update(self):
         """Update device state."""
         shipments = self._api.get_relevant_shipments()
-        status_counts = {}
-
-        for shipment in shipments:
-            status = shipment['status']['formatted']['short']
-            status = self._api.parse_datetime(status, '%d-%m-%Y', '%H:%M')
-
-            name = shipment['settings']['title']
-            status_counts[name] = status
-
-        self._attributes = {
-            ATTR_ATTRIBUTION: ATTRIBUTION,
-            **status_counts
-        }
-
-        self._state = len(status_counts)
+        self._attributes['shipments'] = shipments
+        self._state = len(shipments)

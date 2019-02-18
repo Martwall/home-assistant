@@ -1,6 +1,6 @@
 """The tests for the feedreader component."""
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import unittest
 from genericpath import exists
@@ -59,8 +59,8 @@ class TestFeedreaderComponent(unittest.TestCase):
         """Test the general setup of this component."""
         with patch("homeassistant.components.feedreader."
                    "track_time_interval") as track_method:
-            self.assertTrue(setup_component(self.hass, feedreader.DOMAIN,
-                                            VALID_CONFIG_1))
+            assert setup_component(
+                self.hass, feedreader.DOMAIN, VALID_CONFIG_1)
             track_method.assert_called_once_with(self.hass, mock.ANY,
                                                  DEFAULT_SCAN_INTERVAL)
 
@@ -68,18 +68,17 @@ class TestFeedreaderComponent(unittest.TestCase):
         """Test the setup of this component with scan interval."""
         with patch("homeassistant.components.feedreader."
                    "track_time_interval") as track_method:
-            self.assertTrue(setup_component(self.hass, feedreader.DOMAIN,
-                                            VALID_CONFIG_2))
+            assert setup_component(
+                self.hass, feedreader.DOMAIN, VALID_CONFIG_2)
             track_method.assert_called_once_with(self.hass, mock.ANY,
                                                  timedelta(seconds=60))
 
     def test_setup_max_entries(self):
         """Test the setup of this component with max entries."""
-        self.assertTrue(setup_component(self.hass, feedreader.DOMAIN,
-                                        VALID_CONFIG_3))
+        assert setup_component(self.hass, feedreader.DOMAIN, VALID_CONFIG_3)
 
     def setup_manager(self, feed_data, max_entries=DEFAULT_MAX_ENTRIES):
-        """Generic test setup method."""
+        """Set up feed manager."""
         events = []
 
         @callback
@@ -118,9 +117,11 @@ class TestFeedreaderComponent(unittest.TestCase):
         assert events[0].data.description == "Description 1"
         assert events[0].data.link == "http://www.example.com/link/1"
         assert events[0].data.id == "GUID 1"
-        assert datetime.fromtimestamp(
-            time.mktime(events[0].data.published_parsed)) == \
-            datetime(2018, 4, 30, 5, 10, 0)
+        assert events[0].data.published_parsed.tm_year == 2018
+        assert events[0].data.published_parsed.tm_mon == 4
+        assert events[0].data.published_parsed.tm_mday == 30
+        assert events[0].data.published_parsed.tm_hour == 5
+        assert events[0].data.published_parsed.tm_min == 10
         assert manager.last_update_successful is True
 
     def test_feed_updates(self):
@@ -158,11 +159,11 @@ class TestFeedreaderComponent(unittest.TestCase):
         manager, events = self.setup_manager(feed_data, max_entries=5)
         assert len(events) == 5
 
-    def test_feed_without_publication_date(self):
-        """Test simple feed with entry without publication date."""
+    def test_feed_without_publication_date_and_title(self):
+        """Test simple feed with entry without publication date and title."""
         feed_data = load_fixture('feedreader3.xml')
         manager, events = self.setup_manager(feed_data)
-        assert len(events) == 2
+        assert len(events) == 3
 
     def test_feed_invalid_data(self):
         """Test feed with invalid data."""

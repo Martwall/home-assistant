@@ -9,10 +9,10 @@ import logging
 import voluptuous as vol
 
 from homeassistant.const import (
-    CONF_NAME, STATE_UNKNOWN, CONF_UNIT_OF_MEASUREMENT, CONF_PAYLOAD)
+    CONF_NAME, CONF_UNIT_OF_MEASUREMENT, CONF_PAYLOAD)
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.helpers.entity import Entity
-import homeassistant.components.pilight as pilight
+from homeassistant.components import pilight
 import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,10 +30,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-# pylint: disable=unused-argument
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up Pilight Sensor."""
-    add_devices([PilightSensor(
+    add_entities([PilightSensor(
         hass=hass,
         name=config.get(CONF_NAME),
         variable=config.get(CONF_VARIABLE),
@@ -47,7 +46,7 @@ class PilightSensor(Entity):
 
     def __init__(self, hass, name, variable, payload, unit_of_measurement):
         """Initialize the sensor."""
-        self._state = STATE_UNKNOWN
+        self._state = None
         self._hass = hass
         self._name = name
         self._variable = variable

@@ -8,12 +8,11 @@ import logging
 
 from homeassistant.components.binary_sensor import BinarySensorDevice
 from homeassistant.components.maxcube import DATA_KEY
-from homeassistant.const import STATE_UNKNOWN
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Iterate through all MAX! Devices and add window shutters."""
     devices = []
     for handler in hass.data[DATA_KEY].values():
@@ -28,7 +27,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
                     MaxCubeShutter(handler, name, device.rf_address))
 
     if devices:
-        add_devices(devices)
+        add_entities(devices)
 
 
 class MaxCubeShutter(BinarySensorDevice):
@@ -40,7 +39,7 @@ class MaxCubeShutter(BinarySensorDevice):
         self._sensor_type = 'window'
         self._rf_address = rf_address
         self._cubehandle = handler
-        self._state = STATE_UNKNOWN
+        self._state = None
 
     @property
     def should_poll(self):

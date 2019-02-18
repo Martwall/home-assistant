@@ -13,7 +13,7 @@ import os
 
 import voluptuous as vol
 
-from homeassistant import data_entry_flow
+from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.const import EVENT_HOMEASSISTANT_START
 import homeassistant.helpers.config_validation as cv
@@ -21,7 +21,7 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.discovery import async_load_platform, async_discover
 import homeassistant.util.dt as dt_util
 
-REQUIREMENTS = ['netdisco==1.4.1']
+REQUIREMENTS = ['netdisco==2.3.0']
 
 DOMAIN = 'discovery'
 
@@ -43,32 +43,41 @@ SERVICE_DAIKIN = 'daikin'
 SERVICE_SABNZBD = 'sabnzbd'
 SERVICE_SAMSUNG_PRINTER = 'samsung_printer'
 SERVICE_HOMEKIT = 'homekit'
+SERVICE_OCTOPRINT = 'octoprint'
+SERVICE_FREEBOX = 'freebox'
+SERVICE_IGD = 'igd'
+SERVICE_DLNA_DMR = 'dlna_dmr'
+SERVICE_ROKU = 'roku'
 
 CONFIG_ENTRY_HANDLERS = {
+    SERVICE_DAIKIN: 'daikin',
     SERVICE_DECONZ: 'deconz',
+    'esphome': 'esphome',
+    'google_cast': 'cast',
     SERVICE_HUE: 'hue',
+    SERVICE_TELLDUSLIVE: 'tellduslive',
+    SERVICE_IKEA_TRADFRI: 'tradfri',
+    'sonos': 'sonos',
+    SERVICE_IGD: 'upnp',
 }
 
 SERVICE_HANDLERS = {
     SERVICE_HASS_IOS_APP: ('ios', None),
     SERVICE_NETGEAR: ('device_tracker', None),
     SERVICE_WEMO: ('wemo', None),
-    SERVICE_IKEA_TRADFRI: ('tradfri', None),
     SERVICE_HASSIO: ('hassio', None),
     SERVICE_AXIS: ('axis', None),
     SERVICE_APPLE_TV: ('apple_tv', None),
+    SERVICE_ROKU: ('roku', None),
     SERVICE_WINK: ('wink', None),
     SERVICE_XIAOMI_GW: ('xiaomi_aqara', None),
-    SERVICE_TELLDUSLIVE: ('tellduslive', None),
-    SERVICE_DAIKIN: ('daikin', None),
     SERVICE_SABNZBD: ('sabnzbd', None),
     SERVICE_SAMSUNG_PRINTER: ('sensor', 'syncthru'),
     SERVICE_KONNECTED: ('konnected', None),
-    'google_cast': ('media_player', 'cast'),
+    SERVICE_OCTOPRINT: ('octoprint', None),
+    SERVICE_FREEBOX: ('freebox', None),
     'panasonic_viera': ('media_player', 'panasonic_viera'),
     'plex_mediaserver': ('media_player', 'plex'),
-    'roku': ('media_player', 'roku'),
-    'sonos': ('media_player', 'sonos'),
     'yamaha': ('media_player', 'yamaha'),
     'logitech_mediaserver': ('media_player', 'squeezebox'),
     'directv': ('media_player', 'directv'),
@@ -83,11 +92,13 @@ SERVICE_HANDLERS = {
     'songpal': ('media_player', 'songpal'),
     'kodi': ('media_player', 'kodi'),
     'volumio': ('media_player', 'volumio'),
+    'lg_smart_device': ('media_player', 'lg_soundbar'),
     'nanoleaf_aurora': ('light', 'nanoleaf_aurora'),
 }
 
 OPTIONAL_SERVICE_HANDLERS = {
     SERVICE_HOMEKIT: ('homekit_controller', None),
+    SERVICE_DLNA_DMR: ('media_player', 'dlna_dmr'),
 }
 
 CONF_IGNORE = 'ignore'
@@ -129,6 +140,7 @@ async def async_setup(hass, config):
 
         discovery_hash = json.dumps([service, info], sort_keys=True)
         if discovery_hash in already_discovered:
+            logger.debug("Already discovered service %s %s.", service, info)
             return
 
         already_discovered.add(discovery_hash)
@@ -136,7 +148,7 @@ async def async_setup(hass, config):
         if service in CONFIG_ENTRY_HANDLERS:
             await hass.config_entries.flow.async_init(
                 CONFIG_ENTRY_HANDLERS[service],
-                source=data_entry_flow.SOURCE_DISCOVERY,
+                context={'source': config_entries.SOURCE_DISCOVERY},
                 data=info
             )
             return
@@ -163,22 +175,25 @@ async def async_setup(hass, config):
 
     async def scan_devices(now):
         """Scan for devices."""
-        results = await hass.async_add_job(_discover, netdisco)
+        try:
+            results = await hass.async_add_job(_discover, netdisco)
 
-        for result in results:
-            hass.async_add_job(new_service_found(*result))
+            for result in results:
+                hass.async_create_task(new_service_found(*result))
+        except OSError:
+            logger.error("Network is unreachable")
 
-        async_track_point_in_utc_time(hass, scan_devices,
-                                      dt_util.utcnow() + SCAN_INTERVAL)
+        async_track_point_in_utc_time(
+            hass, scan_devices, dt_util.utcnow() + SCAN_INTERVAL)
 
     @callback
     def schedule_first(event):
         """Schedule the first discovery when Home Assistant starts up."""
         async_track_point_in_utc_time(hass, scan_devices, dt_util.utcnow())
 
-        # discovery local services
+        # Discovery for local services
         if 'HASSIO' in os.environ:
-            hass.async_add_job(new_service_found(SERVICE_HASSIO, {}))
+            hass.async_create_task(new_service_found(SERVICE_HASSIO, {}))
 
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, schedule_first)
 

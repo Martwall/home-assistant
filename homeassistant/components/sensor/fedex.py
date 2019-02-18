@@ -12,7 +12,7 @@ import voluptuous as vol
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (CONF_NAME, CONF_USERNAME, CONF_PASSWORD,
-                                 ATTR_ATTRIBUTION)
+                                 ATTR_ATTRIBUTION, CONF_UPDATE_INTERVAL)
 from homeassistant.helpers.entity import Entity
 from homeassistant.util import slugify
 from homeassistant.util import Throttle
@@ -23,7 +23,6 @@ REQUIREMENTS = ['fedexdeliverymanager==1.0.6']
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_UPDATE_INTERVAL = 'update_interval'
 COOKIE = 'fedexdeliverymanager_cookies.pickle'
 
 DOMAIN = 'fedex'
@@ -41,8 +40,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 })
 
 
-# pylint: disable=unused-argument
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the Fedex platform."""
     import fedexdeliverymanager
 
@@ -58,7 +56,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         _LOGGER.exception("Could not connect to Fedex Delivery Manager")
         return False
 
-    add_devices([FedexSensor(session, name, update_interval)], True)
+    add_entities([FedexSensor(session, name, update_interval)], True)
 
 
 class FedexSensor(Entity):
