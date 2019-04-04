@@ -5,6 +5,8 @@ import unittest
 from unittest.mock import patch, Mock, MagicMock
 from datetime import timedelta
 
+import pytest
+
 from homeassistant.exceptions import PlatformNotReady
 import homeassistant.loader as loader
 from homeassistant.helpers.entity import generate_entity_id
@@ -140,9 +142,9 @@ class TestHelpersEntityPlatform(unittest.TestCase):
            'async_track_time_interval')
     def test_set_scan_interval_via_platform(self, mock_track):
         """Test the setting of the scan interval via platform."""
-        def platform_setup(hass, config, add_devices, discovery_info=None):
+        def platform_setup(hass, config, add_entities, discovery_info=None):
             """Test the platform setup."""
-            add_devices([MockEntity(should_poll=True)])
+            add_entities([MockEntity(should_poll=True)])
 
         platform = MockPlatform(platform_setup)
         platform.SCAN_INTERVAL = timedelta(seconds=30)
@@ -249,80 +251,126 @@ def test_updated_state_used_for_entity_id(hass):
     assert entity_ids[0] == "test_domain.living_room"
 
 
-@asyncio.coroutine
-def test_parallel_updates_async_platform(hass):
-    """Warn we log when platform setup takes a long time."""
+async def test_parallel_updates_async_platform(hass):
+    """Test async platform does not have parallel_updates limit by default."""
     platform = MockPlatform()
-
-    @asyncio.coroutine
-    def mock_update(*args, **kwargs):
-        pass
-
-    platform.async_setup_platform = mock_update
 
     loader.set_component(hass, 'test_domain.platform', platform)
 
     component = EntityComponent(_LOGGER, DOMAIN, hass)
     component._platforms = {}
 
-    yield from component.async_setup({
+    await component.async_setup({
         DOMAIN: {
             'platform': 'platform',
         }
     })
 
     handle = list(component._platforms.values())[-1]
-
     assert handle.parallel_updates is None
 
+    class AsyncEntity(MockEntity):
+        """Mock entity that has async_update."""
 
-@asyncio.coroutine
-def test_parallel_updates_async_platform_with_constant(hass):
-    """Warn we log when platform setup takes a long time."""
+        async def async_update(self):
+            pass
+
+    entity = AsyncEntity()
+    await handle.async_add_entities([entity])
+    assert entity.parallel_updates is None
+
+
+async def test_parallel_updates_async_platform_with_constant(hass):
+    """Test async platform can set parallel_updates limit."""
+    platform = MockPlatform()
+    platform.PARALLEL_UPDATES = 2
+
+    loader.set_component(hass, 'test_domain.platform', platform)
+
+    component = EntityComponent(_LOGGER, DOMAIN, hass)
+    component._platforms = {}
+
+    await component.async_setup({
+        DOMAIN: {
+            'platform': 'platform',
+        }
+    })
+
+    handle = list(component._platforms.values())[-1]
+
+    assert handle.parallel_updates == 2
+
+    class AsyncEntity(MockEntity):
+        """Mock entity that has async_update."""
+
+        async def async_update(self):
+            pass
+
+    entity = AsyncEntity()
+    await handle.async_add_entities([entity])
+    assert entity.parallel_updates is not None
+    assert entity.parallel_updates._value == 2
+
+
+async def test_parallel_updates_sync_platform(hass):
+    """Test sync platform parallel_updates default set to 1."""
     platform = MockPlatform()
 
-    @asyncio.coroutine
-    def mock_update(*args, **kwargs):
-        pass
-
-    platform.async_setup_platform = mock_update
-    platform.PARALLEL_UPDATES = 1
-
     loader.set_component(hass, 'test_domain.platform', platform)
 
     component = EntityComponent(_LOGGER, DOMAIN, hass)
     component._platforms = {}
 
-    yield from component.async_setup({
+    await component.async_setup({
         DOMAIN: {
             'platform': 'platform',
         }
     })
 
     handle = list(component._platforms.values())[-1]
+    assert handle.parallel_updates is None
 
-    assert handle.parallel_updates is not None
+    class SyncEntity(MockEntity):
+        """Mock entity that has update."""
+
+        async def update(self):
+            pass
+
+    entity = SyncEntity()
+    await handle.async_add_entities([entity])
+    assert entity.parallel_updates is not None
+    assert entity.parallel_updates._value == 1
 
 
-@asyncio.coroutine
-def test_parallel_updates_sync_platform(hass):
-    """Warn we log when platform setup takes a long time."""
-    platform = MockPlatform(setup_platform=lambda *args: None)
+async def test_parallel_updates_sync_platform_with_constant(hass):
+    """Test sync platform can set parallel_updates limit."""
+    platform = MockPlatform()
+    platform.PARALLEL_UPDATES = 2
 
     loader.set_component(hass, 'test_domain.platform', platform)
 
     component = EntityComponent(_LOGGER, DOMAIN, hass)
     component._platforms = {}
 
-    yield from component.async_setup({
+    await component.async_setup({
         DOMAIN: {
             'platform': 'platform',
         }
     })
 
     handle = list(component._platforms.values())[-1]
+    assert handle.parallel_updates == 2
 
-    assert handle.parallel_updates is not None
+    class SyncEntity(MockEntity):
+        """Mock entity that has update."""
+
+        async def update(self):
+            pass
+
+    entity = SyncEntity()
+    await handle.async_add_entities([entity])
+    assert entity.parallel_updates is not None
+    assert entity.parallel_updates._value == 2
 
 
 @asyncio.coroutine
@@ -334,7 +382,7 @@ def test_raise_error_on_update(hass):
     entity2 = MockEntity(name='test_2')
 
     def _raise():
-        """Helper to raise an exception."""
+        """Raise an exception."""
         raise AssertionError
 
     entity1.update = _raise
@@ -487,7 +535,7 @@ def test_registry_respect_entity_disabled(hass):
     assert hass.states.async_entity_ids() == []
 
 
-async def test_entity_registry_updates(hass):
+async def test_entity_registry_updates_name(hass):
     """Test that updates on the entity registry update platform entities."""
     registry = mock_registry(hass, {
         'test_domain.world': entity_registry.RegistryEntry(
@@ -518,9 +566,9 @@ async def test_setup_entry(hass):
     """Test we can setup an entry."""
     registry = mock_registry(hass)
 
-    async def async_setup_entry(hass, config_entry, async_add_devices):
+    async def async_setup_entry(hass, config_entry, async_add_entities):
         """Mock setup entry method."""
-        async_add_devices([
+        async_add_entities([
             MockEntity(name='test1', unique_id='unique')
         ])
         return True
@@ -602,3 +650,171 @@ def test_not_fails_with_adding_empty_entities_(hass):
     yield from component.async_add_entities([])
 
     assert len(hass.states.async_entity_ids()) == 0
+
+
+async def test_entity_registry_updates_entity_id(hass):
+    """Test that updates on the entity registry update platform entities."""
+    registry = mock_registry(hass, {
+        'test_domain.world': entity_registry.RegistryEntry(
+            entity_id='test_domain.world',
+            unique_id='1234',
+            # Using component.async_add_entities is equal to platform "domain"
+            platform='test_platform',
+            name='Some name'
+        )
+    })
+    platform = MockEntityPlatform(hass)
+    entity = MockEntity(unique_id='1234')
+    await platform.async_add_entities([entity])
+
+    state = hass.states.get('test_domain.world')
+    assert state is not None
+    assert state.name == 'Some name'
+
+    registry.async_update_entity('test_domain.world',
+                                 new_entity_id='test_domain.planet')
+    await hass.async_block_till_done()
+    await hass.async_block_till_done()
+
+    assert hass.states.get('test_domain.world') is None
+    assert hass.states.get('test_domain.planet') is not None
+
+
+async def test_entity_registry_updates_invalid_entity_id(hass):
+    """Test that we can't update to an invalid entity id."""
+    registry = mock_registry(hass, {
+        'test_domain.world': entity_registry.RegistryEntry(
+            entity_id='test_domain.world',
+            unique_id='1234',
+            # Using component.async_add_entities is equal to platform "domain"
+            platform='test_platform',
+            name='Some name'
+        ),
+        'test_domain.existing': entity_registry.RegistryEntry(
+            entity_id='test_domain.existing',
+            unique_id='5678',
+            platform='test_platform',
+        ),
+    })
+    platform = MockEntityPlatform(hass)
+    entity = MockEntity(unique_id='1234')
+    await platform.async_add_entities([entity])
+
+    state = hass.states.get('test_domain.world')
+    assert state is not None
+    assert state.name == 'Some name'
+
+    with pytest.raises(ValueError):
+        registry.async_update_entity('test_domain.world',
+                                     new_entity_id='test_domain.existing')
+
+    with pytest.raises(ValueError):
+        registry.async_update_entity('test_domain.world',
+                                     new_entity_id='invalid_entity_id')
+
+    with pytest.raises(ValueError):
+        registry.async_update_entity('test_domain.world',
+                                     new_entity_id='diff_domain.world')
+
+    await hass.async_block_till_done()
+    await hass.async_block_till_done()
+
+    assert hass.states.get('test_domain.world') is not None
+    assert hass.states.get('invalid_entity_id') is None
+    assert hass.states.get('diff_domain.world') is None
+
+
+async def test_device_info_called(hass):
+    """Test device info is forwarded correctly."""
+    registry = await hass.helpers.device_registry.async_get_registry()
+    hub = registry.async_get_or_create(
+        config_entry_id='123',
+        connections=set(),
+        identifiers={('hue', 'hub-id')},
+        manufacturer='manufacturer', model='hub'
+    )
+
+    async def async_setup_entry(hass, config_entry, async_add_entities):
+        """Mock setup entry method."""
+        async_add_entities([
+            # Invalid device info
+            MockEntity(unique_id='abcd', device_info={}),
+            # Valid device info
+            MockEntity(unique_id='qwer', device_info={
+                'identifiers': {('hue', '1234')},
+                'connections': {('mac', 'abcd')},
+                'manufacturer': 'test-manuf',
+                'model': 'test-model',
+                'name': 'test-name',
+                'sw_version': 'test-sw',
+                'via_hub': ('hue', 'hub-id'),
+            }),
+        ])
+        return True
+
+    platform = MockPlatform(
+        async_setup_entry=async_setup_entry
+    )
+    config_entry = MockConfigEntry(entry_id='super-mock-id')
+    entity_platform = MockEntityPlatform(
+        hass,
+        platform_name=config_entry.domain,
+        platform=platform
+    )
+
+    assert await entity_platform.async_setup_entry(config_entry)
+    await hass.async_block_till_done()
+
+    assert len(hass.states.async_entity_ids()) == 2
+
+    device = registry.async_get_device({('hue', '1234')}, set())
+    assert device is not None
+    assert device.identifiers == {('hue', '1234')}
+    assert device.connections == {('mac', 'abcd')}
+    assert device.manufacturer == 'test-manuf'
+    assert device.model == 'test-model'
+    assert device.name == 'test-name'
+    assert device.sw_version == 'test-sw'
+    assert device.hub_device_id == hub.id
+
+
+async def test_device_info_not_overrides(hass):
+    """Test device info is forwarded correctly."""
+    registry = await hass.helpers.device_registry.async_get_registry()
+    device = registry.async_get_or_create(
+        config_entry_id='bla',
+        connections={('mac', 'abcd')},
+        manufacturer='test-manufacturer',
+        model='test-model'
+    )
+
+    assert device.manufacturer == 'test-manufacturer'
+    assert device.model == 'test-model'
+
+    async def async_setup_entry(hass, config_entry, async_add_entities):
+        """Mock setup entry method."""
+        async_add_entities([
+            MockEntity(unique_id='qwer', device_info={
+                'connections': {('mac', 'abcd')},
+            }),
+        ])
+        return True
+
+    platform = MockPlatform(
+        async_setup_entry=async_setup_entry
+    )
+    config_entry = MockConfigEntry(entry_id='super-mock-id')
+    entity_platform = MockEntityPlatform(
+        hass,
+        platform_name=config_entry.domain,
+        platform=platform
+    )
+
+    assert await entity_platform.async_setup_entry(config_entry)
+    await hass.async_block_till_done()
+
+    device2 = registry.async_get_device(set(), {('mac', 'abcd')})
+    assert device2 is not None
+    assert device.id == device2.id
+    assert device2.manufacturer == 'test-manufacturer'
+    assert device2.model == 'test-model'

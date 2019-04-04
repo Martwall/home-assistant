@@ -1,9 +1,4 @@
-"""
-Support for Google Calendar event device sensors.
-
-For more details about this platform, please refer to the documentation at
-https://home-assistant.io/components/calendar/
-"""
+"""Support for Google Calendar event device sensors."""
 import logging
 from datetime import timedelta
 import re
@@ -13,7 +8,8 @@ from aiohttp import web
 from homeassistant.components.google import (
     CONF_OFFSET, CONF_DEVICE_ID, CONF_NAME)
 from homeassistant.const import STATE_OFF, STATE_ON
-from homeassistant.helpers.config_validation import PLATFORM_SCHEMA  # noqa
+from homeassistant.helpers.config_validation import (  # noqa
+    PLATFORM_SCHEMA, PLATFORM_SCHEMA_BASE)
 from homeassistant.helpers.config_validation import time_period_str
 from homeassistant.helpers.entity import Entity, generate_entity_id
 from homeassistant.helpers.entity_component import EntityComponent
@@ -41,8 +37,9 @@ async def async_setup(hass, config):
     hass.http.register_view(CalendarListView(component))
     hass.http.register_view(CalendarEventView(component))
 
-    await hass.components.frontend.async_register_built_in_panel(
-        'calendar', 'calendar', 'hass:calendar')
+    # Doesn't work in prod builds of the frontend: home-assistant-polymer#1289
+    # await hass.components.frontend.async_register_built_in_panel(
+    #     'calendar', 'calendar', 'hass:calendar')
 
     await component.async_setup(config)
     return True
@@ -129,7 +126,7 @@ class CalendarEventDevice(Entity):
 
         now = dt.now()
 
-        if start <= now and end > now:
+        if start <= now < end:
             return STATE_ON
 
         if now >= end:

@@ -7,8 +7,8 @@ set -e
 INSTALL_TELLSTICK="${INSTALL_TELLSTICK:-yes}"
 INSTALL_OPENALPR="${INSTALL_OPENALPR:-yes}"
 INSTALL_LIBCEC="${INSTALL_LIBCEC:-yes}"
-INSTALL_PHANTOMJS="${INSTALL_PHANTOMJS:-yes}"
 INSTALL_SSOCR="${INSTALL_SSOCR:-yes}"
+INSTALL_DLIB="${INSTALL_DLIB:-yes}"
 
 # Required debian packages for running hass or components
 PACKAGES=(
@@ -28,6 +28,9 @@ PACKAGES=(
   libmpc-dev libmpfr-dev libgmp-dev
   # homeassistant.components.ffmpeg
   ffmpeg
+  # homeassistant.components.stream
+  libavformat-dev libavcodec-dev libavdevice-dev
+  libavutil-dev libswscale-dev libswresample-dev libavfilter-dev
   # homeassistant.components.sensor.iperf3
   iperf3
 )
@@ -46,7 +49,7 @@ apt-get install -y --no-install-recommends ${PACKAGES[@]} ${PACKAGES_DEV[@]}
 # This is a list of scripts that install additional dependencies. If you only
 # need to install a package from the official debian repository, just add it
 # to the list above. Only create a script if you need compiling, manually
-# downloading or a 3th party repository.
+# downloading or a 3rd party repository.
 if [ "$INSTALL_TELLSTICK" == "yes" ]; then
   virtualization/Docker/scripts/tellstick
 fi
@@ -59,12 +62,12 @@ if [ "$INSTALL_LIBCEC" == "yes" ]; then
   virtualization/Docker/scripts/libcec
 fi
 
-if [ "$INSTALL_PHANTOMJS" == "yes" ]; then
-  virtualization/Docker/scripts/phantomjs
-fi
-
 if [ "$INSTALL_SSOCR" == "yes" ]; then
   virtualization/Docker/scripts/ssocr
+fi
+
+if [ "$INSTALL_DLIB" == "yes" ]; then
+  pip3 install --no-cache-dir "dlib>=19.5"
 fi
 
 # Remove packages

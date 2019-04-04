@@ -5,12 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.setup import async_setup_component
 from homeassistant.components.frontend import (
     DOMAIN, CONF_JS_VERSION, CONF_THEMES, CONF_EXTRA_HTML_URL,
     CONF_EXTRA_HTML_URL_ES5)
-from homeassistant.components import websocket_api as wapi
+from homeassistant.components.websocket_api.const import TYPE_RESULT
 
 from tests.common import mock_coro
 
@@ -60,8 +59,16 @@ def mock_http_client_with_urls(hass, aiohttp_client):
     return hass.loop.run_until_complete(aiohttp_client(hass.http.app))
 
 
+@pytest.fixture
+def mock_onboarded():
+    """Mock that we're onboarded."""
+    with patch('homeassistant.components.onboarding.async_is_onboarded',
+               return_value=True):
+        yield
+
+
 @asyncio.coroutine
-def test_frontend_and_static(mock_http_client):
+def test_frontend_and_static(mock_http_client, mock_onboarded):
     """Test if we can get the frontend."""
     resp = yield from mock_http_client.get('')
     assert resp.status == 200
@@ -71,7 +78,7 @@ def test_frontend_and_static(mock_http_client):
 
     # Test we can retrieve frontend.js
     frontendjs = re.search(
-        r'(?P<app>\/frontend_es5\/app-[A-Za-z0-9]{32}.js)', text)
+        r'(?P<app>\/frontend_es5\/app-[A-Za-z0-9]{8}.js)', text)
 
     assert frontendjs is not None
     resp = yield from mock_http_client.get(frontendjs.groups(0)[0])
@@ -214,35 +221,35 @@ async def test_missing_themes(hass, hass_ws_client):
     msg = await client.receive_json()
 
     assert msg['id'] == 5
-    assert msg['type'] == wapi.TYPE_RESULT
+    assert msg['type'] == TYPE_RESULT
     assert msg['success']
     assert msg['result']['default_theme'] == 'default'
     assert msg['result']['themes'] == {}
 
 
 @asyncio.coroutine
-def test_extra_urls(mock_http_client_with_urls):
+def test_extra_urls(mock_http_client_with_urls, mock_onboarded):
     """Test that extra urls are loaded."""
     resp = yield from mock_http_client_with_urls.get('/states?latest')
     assert resp.status == 200
     text = yield from resp.text()
-    assert text.find('href="https://domain.com/my_extra_url.html"') >= 0
+    assert text.find("href='https://domain.com/my_extra_url.html'") >= 0
 
 
 @asyncio.coroutine
-def test_extra_urls_es5(mock_http_client_with_urls):
+def test_extra_urls_es5(mock_http_client_with_urls, mock_onboarded):
     """Test that es5 extra urls are loaded."""
     resp = yield from mock_http_client_with_urls.get('/states?es5')
     assert resp.status == 200
     text = yield from resp.text()
-    assert text.find('href="https://domain.com/my_extra_url_es5.html"') >= 0
+    assert text.find("href='https://domain.com/my_extra_url_es5.html'") >= 0
 
 
 async def test_get_panels(hass, hass_ws_client):
     """Test get_panels command."""
     await async_setup_component(hass, 'frontend')
     await hass.components.frontend.async_register_built_in_panel(
-        'map', 'Map', 'mdi:account-location')
+        'map', 'Map', 'mdi:tooltip-account', require_admin=True)
 
     client = await hass_ws_client(hass)
     await client.send_json({
@@ -253,12 +260,37 @@ async def test_get_panels(hass, hass_ws_client):
     msg = await client.receive_json()
 
     assert msg['id'] == 5
-    assert msg['type'] == wapi.TYPE_RESULT
+    assert msg['type'] == TYPE_RESULT
     assert msg['success']
     assert msg['result']['map']['component_name'] == 'map'
     assert msg['result']['map']['url_path'] == 'map'
-    assert msg['result']['map']['icon'] == 'mdi:account-location'
+    assert msg['result']['map']['icon'] == 'mdi:tooltip-account'
     assert msg['result']['map']['title'] == 'Map'
+    assert msg['result']['map']['require_admin'] is True
+
+
+async def test_get_panels_non_admin(hass, hass_ws_client, hass_admin_user):
+    """Test get_panels command."""
+    hass_admin_user.groups = []
+    await async_setup_component(hass, 'frontend')
+    await hass.components.frontend.async_register_built_in_panel(
+        'map', 'Map', 'mdi:tooltip-account', require_admin=True)
+    await hass.components.frontend.async_register_built_in_panel(
+        'history', 'History', 'mdi:history')
+
+    client = await hass_ws_client(hass)
+    await client.send_json({
+        'id': 5,
+        'type': 'get_panels',
+    })
+
+    msg = await client.receive_json()
+
+    assert msg['id'] == 5
+    assert msg['type'] == TYPE_RESULT
+    assert msg['success']
+    assert 'history' in msg['result']
+    assert 'map' not in msg['result']
 
 
 async def test_get_translations(hass, hass_ws_client):
@@ -276,63 +308,37 @@ async def test_get_translations(hass, hass_ws_client):
         msg = await client.receive_json()
 
     assert msg['id'] == 5
-    assert msg['type'] == wapi.TYPE_RESULT
+    assert msg['type'] == TYPE_RESULT
     assert msg['success']
     assert msg['result'] == {'resources': {'lang': 'nl'}}
 
 
-async def test_lovelace_ui(hass, hass_ws_client):
-    """Test lovelace_ui command."""
-    await async_setup_component(hass, 'frontend')
-    client = await hass_ws_client(hass)
-
-    with patch('homeassistant.components.frontend.load_yaml',
-               return_value={'hello': 'world'}):
-        await client.send_json({
-            'id': 5,
-            'type': 'frontend/lovelace_config',
-        })
-        msg = await client.receive_json()
-
-    assert msg['id'] == 5
-    assert msg['type'] == wapi.TYPE_RESULT
-    assert msg['success']
-    assert msg['result'] == {'hello': 'world'}
+async def test_auth_load(mock_http_client, mock_onboarded):
+    """Test auth component loaded by default."""
+    resp = await mock_http_client.get('/auth/providers')
+    assert resp.status == 200
 
 
-async def test_lovelace_ui_not_found(hass, hass_ws_client):
-    """Test lovelace_ui command cannot find file."""
-    await async_setup_component(hass, 'frontend')
-    client = await hass_ws_client(hass)
-
-    with patch('homeassistant.components.frontend.load_yaml',
-               side_effect=FileNotFoundError):
-        await client.send_json({
-            'id': 5,
-            'type': 'frontend/lovelace_config',
-        })
-        msg = await client.receive_json()
-
-    assert msg['id'] == 5
-    assert msg['type'] == wapi.TYPE_RESULT
-    assert msg['success'] is False
-    assert msg['error']['code'] == 'file_not_found'
+async def test_onboarding_load(mock_http_client):
+    """Test onboarding component loaded by default."""
+    resp = await mock_http_client.get('/api/onboarding')
+    assert resp.status == 200
 
 
-async def test_lovelace_ui_load_err(hass, hass_ws_client):
-    """Test lovelace_ui command cannot find file."""
-    await async_setup_component(hass, 'frontend')
-    client = await hass_ws_client(hass)
+async def test_auth_authorize(mock_http_client):
+    """Test the authorize endpoint works."""
+    resp = await mock_http_client.get(
+        '/auth/authorize?response_type=code&client_id=https://localhost/&'
+        'redirect_uri=https://localhost/&state=123%23456')
 
-    with patch('homeassistant.components.frontend.load_yaml',
-               side_effect=HomeAssistantError):
-        await client.send_json({
-            'id': 5,
-            'type': 'frontend/lovelace_config',
-        })
-        msg = await client.receive_json()
+    assert str(resp.url.relative()) == (
+        '/frontend_es5/authorize.html?response_type=code&client_id='
+        'https://localhost/&redirect_uri=https://localhost/&state=123%23456')
 
-    assert msg['id'] == 5
-    assert msg['type'] == wapi.TYPE_RESULT
-    assert msg['success'] is False
-    assert msg['error']['code'] == 'load_error'
+    resp = await mock_http_client.get(
+        '/auth/authorize?latest&response_type=code&client_id='
+        'https://localhost/&redirect_uri=https://localhost/&state=123%23456')
+
+    assert str(resp.url.relative()) == (
+        '/frontend_latest/authorize.html?latest&response_type=code&client_id='
+        'https://localhost/&redirect_uri=https://localhost/&state=123%23456')
