@@ -12,8 +12,6 @@ from .const import ATTR_LAST_DATA, DATA_CLIENT, DOMAIN, TYPE_BINARY_SENSOR
 
 _LOGGER = logging.getLogger(__name__)
 
-DEPENDENCIES = ['ambient_station']
-
 
 async def async_setup_platform(
         hass, config, async_add_entities, discovery_info=None):
@@ -40,20 +38,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class AmbientWeatherBinarySensor(AmbientWeatherEntity, BinarySensorDevice):
     """Define an Ambient binary sensor."""
-
-    def __init__(
-            self, ambient, mac_address, station_name, sensor_type, sensor_name,
-            device_class):
-        """Initialize the sensor."""
-        super().__init__(
-            ambient, mac_address, station_name, sensor_type, sensor_name)
-
-        self._device_class = device_class
-
-    @property
-    def device_class(self):
-        """Return the device class."""
-        return self._device_class
 
     @property
     def is_on(self):

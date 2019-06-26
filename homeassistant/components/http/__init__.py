@@ -29,8 +29,6 @@ from .real_ip import setup_real_ip
 from .static import CACHE_HEADERS, CachingStaticResource
 from .view import HomeAssistantView  # noqa
 
-REQUIREMENTS = ['aiohttp_cors==0.7.0']
-
 DOMAIN = 'http'
 
 CONF_API_PASSWORD = 'api_password'
@@ -230,6 +228,7 @@ class HomeAssistantHTTP:
         self.ssl_key = ssl_key
         self.server_host = server_host
         self.server_port = server_port
+        self.trusted_proxies = trusted_proxies
         self.is_ban_enabled = is_ban_enabled
         self.ssl_profile = ssl_profile
         self._handler = None

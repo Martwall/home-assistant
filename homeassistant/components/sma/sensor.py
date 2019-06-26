@@ -8,13 +8,11 @@ import voluptuous as vol
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 from homeassistant.const import (
     CONF_HOST, CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_SSL, CONF_VERIFY_SSL,
-    EVENT_HOMEASSISTANT_STOP)
+    EVENT_HOMEASSISTANT_STOP, CONF_PATH)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_time_interval
-
-REQUIREMENTS = ['pysma==0.3.1']
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +52,7 @@ CUSTOM_SCHEMA = vol.Any({
         vol.All(cv.string, vol.Length(min=13, max=15)),
     vol.Required(CONF_UNIT): cv.string,
     vol.Optional(CONF_FACTOR, default=1): vol.Coerce(float),
+    vol.Optional(CONF_PATH): vol.All(cv.ensure_list, [str]),
 })
 
 PLATFORM_SCHEMA = vol.All(PLATFORM_SCHEMA.extend({
@@ -81,7 +80,8 @@ async def async_setup_platform(
     sensor_def = pysma.Sensors()
 
     # Sensor from the custom config
-    sensor_def.add([pysma.Sensor(o[CONF_KEY], n, o[CONF_UNIT], o[CONF_FACTOR])
+    sensor_def.add([pysma.Sensor(o[CONF_KEY], n, o[CONF_UNIT], o[CONF_FACTOR],
+                                 o.get(CONF_PATH))
                     for n, o in config[CONF_CUSTOM].items()])
 
     # Use all sensors by default
@@ -143,7 +143,7 @@ async def async_setup_platform(
             if task:
                 tasks.append(task)
         if tasks:
-            await asyncio.wait(tasks, loop=hass.loop)
+            await asyncio.wait(tasks)
 
     interval = config.get(CONF_SCAN_INTERVAL) or timedelta(seconds=5)
     async_track_time_interval(hass, async_sma, interval)

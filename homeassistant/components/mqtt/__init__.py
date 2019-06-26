@@ -30,17 +30,15 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.typing import (
     ConfigType, HomeAssistantType, ServiceDataType)
 from homeassistant.loader import bind_hass
-from homeassistant.setup import async_prepare_setup_platform
 from homeassistant.util.async_ import (
     run_callback_threadsafe, run_coroutine_threadsafe)
 from homeassistant.util.logging import catch_log_exception
 
 # Loading the config flow file will register the flow
-from . import config_flow  # noqa pylint: disable=unused-import
-from .const import CONF_BROKER, CONF_DISCOVERY, DEFAULT_DISCOVERY
-from .server import HBMQTT_CONFIG_SCHEMA
-
-REQUIREMENTS = ['paho-mqtt==1.4.0']
+from . import config_flow, discovery, server  # noqa pylint: disable=unused-import
+from .const import (
+    CONF_BROKER, CONF_DISCOVERY, DEFAULT_DISCOVERY, CONF_STATE_TOPIC,
+    ATTR_DISCOVERY_HASH)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,12 +64,12 @@ CONF_TLS_VERSION = 'tls_version'
 CONF_BIRTH_MESSAGE = 'birth_message'
 CONF_WILL_MESSAGE = 'will_message'
 
-CONF_STATE_TOPIC = 'state_topic'
 CONF_COMMAND_TOPIC = 'command_topic'
 CONF_AVAILABILITY_TOPIC = 'availability_topic'
 CONF_PAYLOAD_AVAILABLE = 'payload_available'
 CONF_PAYLOAD_NOT_AVAILABLE = 'payload_not_available'
 CONF_JSON_ATTRS_TOPIC = 'json_attributes_topic'
+CONF_JSON_ATTRS_TEMPLATE = 'json_attributes_template'
 CONF_QOS = 'qos'
 CONF_RETAIN = 'retain'
 
@@ -81,7 +79,8 @@ CONF_CONNECTIONS = 'connections'
 CONF_MANUFACTURER = 'manufacturer'
 CONF_MODEL = 'model'
 CONF_SW_VERSION = 'sw_version'
-CONF_VIA_HUB = 'via_hub'
+CONF_VIA_DEVICE = 'via_device'
+CONF_DEPRECATED_VIA_HUB = 'via_hub'
 
 PROTOCOL_31 = '3.1'
 PROTOCOL_311 = '3.1.1'
@@ -101,7 +100,6 @@ ATTR_PAYLOAD = 'payload'
 ATTR_PAYLOAD_TEMPLATE = 'payload_template'
 ATTR_QOS = CONF_QOS
 ATTR_RETAIN = CONF_RETAIN
-ATTR_DISCOVERY_HASH = 'discovery_hash'
 
 MAX_RECONNECT_WAIT = 300  # seconds
 
@@ -179,6 +177,16 @@ MQTT_WILL_BIRTH_SCHEMA = vol.Schema({
     vol.Optional(ATTR_RETAIN, default=DEFAULT_RETAIN): cv.boolean,
 }, required=True)
 
+
+def embedded_broker_deprecated(value):
+    """Warn user that embedded MQTT broker is deprecated."""
+    _LOGGER.warning(
+        "The embedded MQTT broker has been deprecated and will stop working"
+        "after June 5th, 2019. Use an external broker instead. For"
+        "instructions, see https://www.home-assistant.io/docs/mqtt/broker")
+    return value
+
+
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
         vol.Optional(CONF_CLIENT_ID): cv.string,
@@ -198,7 +206,8 @@ CONFIG_SCHEMA = vol.Schema({
             vol.Any('auto', '1.0', '1.1', '1.2'),
         vol.Optional(CONF_PROTOCOL, default=DEFAULT_PROTOCOL):
             vol.All(cv.string, vol.In([PROTOCOL_31, PROTOCOL_311])),
-        vol.Optional(CONF_EMBEDDED): HBMQTT_CONFIG_SCHEMA,
+        vol.Optional(CONF_EMBEDDED):
+            vol.All(server.HBMQTT_CONFIG_SCHEMA, embedded_broker_deprecated),
         vol.Optional(CONF_WILL_MESSAGE): MQTT_WILL_BIRTH_SCHEMA,
         vol.Optional(CONF_BIRTH_MESSAGE): MQTT_WILL_BIRTH_SCHEMA,
         vol.Optional(CONF_DISCOVERY, default=DEFAULT_DISCOVERY): cv.boolean,
@@ -221,20 +230,24 @@ MQTT_AVAILABILITY_SCHEMA = vol.Schema({
                  default=DEFAULT_PAYLOAD_NOT_AVAILABLE): cv.string,
 })
 
-MQTT_ENTITY_DEVICE_INFO_SCHEMA = vol.All(vol.Schema({
-    vol.Optional(CONF_IDENTIFIERS, default=list):
-        vol.All(cv.ensure_list, [cv.string]),
-    vol.Optional(CONF_CONNECTIONS, default=list):
-        vol.All(cv.ensure_list, [vol.All(vol.Length(2), [cv.string])]),
-    vol.Optional(CONF_MANUFACTURER): cv.string,
-    vol.Optional(CONF_MODEL): cv.string,
-    vol.Optional(CONF_NAME): cv.string,
-    vol.Optional(CONF_SW_VERSION): cv.string,
-    vol.Optional(CONF_VIA_HUB): cv.string,
-}), validate_device_has_at_least_one_identifier)
+MQTT_ENTITY_DEVICE_INFO_SCHEMA = vol.All(
+    cv.deprecated(CONF_DEPRECATED_VIA_HUB, CONF_VIA_DEVICE),
+    vol.Schema({
+        vol.Optional(CONF_IDENTIFIERS, default=list):
+            vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional(CONF_CONNECTIONS, default=list):
+            vol.All(cv.ensure_list, [vol.All(vol.Length(2), [cv.string])]),
+        vol.Optional(CONF_MANUFACTURER): cv.string,
+        vol.Optional(CONF_MODEL): cv.string,
+        vol.Optional(CONF_NAME): cv.string,
+        vol.Optional(CONF_SW_VERSION): cv.string,
+        vol.Optional(CONF_VIA_DEVICE): cv.string,
+    }),
+    validate_device_has_at_least_one_identifier)
 
 MQTT_JSON_ATTRS_SCHEMA = vol.Schema({
     vol.Optional(CONF_JSON_ATTRS_TOPIC): valid_subscribe_topic,
+    vol.Optional(CONF_JSON_ATTRS_TEMPLATE): cv.template,
 })
 
 MQTT_BASE_PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend(SCHEMA_BASE)
@@ -360,7 +373,7 @@ async def async_subscribe(hass: HomeAssistantType, topic: str,
     wrapped_msg_callback = msg_callback
     # If we have 3 paramaters with no default value, wrap the callback
     if non_default == 3:
-        _LOGGER.info(
+        _LOGGER.warning(
             "Signature of MQTT msg_callback '%s.%s' is deprecated",
             inspect.getmodule(msg_callback).__name__, msg_callback.__name__)
         wrapped_msg_callback = wrap_msg_callback(msg_callback)
@@ -397,13 +410,6 @@ async def _async_setup_server(hass: HomeAssistantType, config: ConfigType):
     """
     conf = config.get(DOMAIN, {})  # type: ConfigType
 
-    server = await async_prepare_setup_platform(
-        hass, config, DOMAIN, 'server')
-
-    if server is None:
-        _LOGGER.error("Unable to load embedded server")
-        return None
-
     success, broker_config = \
         await server.async_start(
             hass, conf.get(CONF_PASSWORD), conf.get(CONF_EMBEDDED))
@@ -421,9 +427,6 @@ async def _async_setup_discovery(hass: HomeAssistantType, conf: ConfigType,
 
     This method is a coroutine.
     """
-    discovery = await async_prepare_setup_platform(
-        hass, hass_config, DOMAIN, 'discovery')
-
     if discovery is None:
         _LOGGER.error("Unable to load MQTT discovery")
         return False
@@ -652,7 +655,7 @@ class MQTT:
         self.birth_message = birth_message
         self.connected = False
         self._mqttc = None  # type: mqtt.Client
-        self._paho_lock = asyncio.Lock(loop=hass.loop)
+        self._paho_lock = asyncio.Lock()
 
         if protocol == PROTOCOL_31:
             proto = mqtt.MQTTv31  # type: int
@@ -911,10 +914,18 @@ class MqttAttributes(Entity):
         """(Re)Subscribe to topics."""
         from .subscription import async_subscribe_topics
 
+        attr_tpl = self._attributes_config.get(CONF_JSON_ATTRS_TEMPLATE)
+        if attr_tpl is not None:
+            attr_tpl.hass = self.hass
+
         @callback
         def attributes_message_received(msg: Message) -> None:
             try:
-                json_dict = json.loads(msg.payload)
+                payload = msg.payload
+                if attr_tpl is not None:
+                    payload = attr_tpl.async_render_with_possible_json_value(
+                        payload)
+                json_dict = json.loads(payload)
                 if isinstance(json_dict, dict):
                     self._attributes = json_dict
                     self.async_write_ha_state()
@@ -922,7 +933,7 @@ class MqttAttributes(Entity):
                     _LOGGER.warning("JSON result was not a dictionary")
                     self._attributes = None
             except ValueError:
-                _LOGGER.warning("Erroneous JSON: %s", msg.payload)
+                _LOGGER.warning("Erroneous JSON: %s", payload)
                 self._attributes = None
 
         self._attributes_sub_state = await async_subscribe_topics(
@@ -1091,8 +1102,8 @@ class MqttEntityDeviceInfo(Entity):
         if CONF_SW_VERSION in self._device_config:
             info['sw_version'] = self._device_config[CONF_SW_VERSION]
 
-        if CONF_VIA_HUB in self._device_config:
-            info['via_hub'] = (DOMAIN, self._device_config[CONF_VIA_HUB])
+        if CONF_VIA_DEVICE in self._device_config:
+            info['via_device'] = (DOMAIN, self._device_config[CONF_VIA_DEVICE])
 
         return info
 

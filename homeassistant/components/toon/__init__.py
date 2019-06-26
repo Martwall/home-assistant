@@ -16,8 +16,6 @@ from .const import (
     CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_DISPLAY, CONF_TENANT,
     DATA_TOON_CLIENT, DATA_TOON_CONFIG, DOMAIN)
 
-REQUIREMENTS = ['toonapilib==3.2.2']
-
 _LOGGER = logging.getLogger(__name__)
 
 # Validation of the user's configuration
@@ -66,7 +64,7 @@ async def async_setup_entry(hass: HomeAssistantType,
         },
         manufacturer='Eneco',
         name="Meter Adapter",
-        via_hub=(DOMAIN, toon.agreement.id)
+        via_device=(DOMAIN, toon.agreement.id)
     )
 
     for component in 'binary_sensor', 'climate', 'sensor':
@@ -128,7 +126,7 @@ class ToonElectricityMeterDeviceEntity(ToonEntity):
             'identifiers': {
                 (DOMAIN, self.toon.agreement.id, 'electricity'),
             },
-            'via_hub': (DOMAIN, self.toon.agreement.id, 'meter_adapter'),
+            'via_device': (DOMAIN, self.toon.agreement.id, 'meter_adapter'),
         }
 
 
@@ -138,16 +136,16 @@ class ToonGasMeterDeviceEntity(ToonEntity):
     @property
     def device_info(self) -> Dict[str, Any]:
         """Return device information about this entity."""
-        via_hub = 'meter_adapter'
+        via_device = 'meter_adapter'
         if self.toon.gas.is_smart:
-            via_hub = 'electricity'
+            via_device = 'electricity'
 
         return {
             'name': 'Gas Meter',
             'identifiers': {
                 (DOMAIN, self.toon.agreement.id, 'gas'),
             },
-            'via_hub': (DOMAIN, self.toon.agreement.id, via_hub),
+            'via_device': (DOMAIN, self.toon.agreement.id, via_device),
         }
 
 
@@ -162,7 +160,7 @@ class ToonSolarDeviceEntity(ToonEntity):
             'identifiers': {
                 (DOMAIN, self.toon.agreement.id, 'solar'),
             },
-            'via_hub': (DOMAIN, self.toon.agreement.id, 'meter_adapter'),
+            'via_device': (DOMAIN, self.toon.agreement.id, 'meter_adapter'),
         }
 
 
@@ -178,7 +176,7 @@ class ToonBoilerModuleDeviceEntity(ToonEntity):
             'identifiers': {
                 (DOMAIN, self.toon.agreement.id, 'boiler_module'),
             },
-            'via_hub': (DOMAIN, self.toon.agreement.id),
+            'via_device': (DOMAIN, self.toon.agreement.id),
         }
 
 
@@ -193,5 +191,5 @@ class ToonBoilerDeviceEntity(ToonEntity):
             'identifiers': {
                 (DOMAIN, self.toon.agreement.id, 'boiler'),
             },
-            'via_hub': (DOMAIN, self.toon.agreement.id, 'boiler_module'),
+            'via_device': (DOMAIN, self.toon.agreement.id, 'boiler_module'),
         }

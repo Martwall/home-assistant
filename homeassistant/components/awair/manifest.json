@@ -3,8 +3,10 @@
   "name": "Awair",
   "documentation": "https://www.home-assistant.io/components/awair",
   "requirements": [
-    "python_awair==0.0.3"
+    "python_awair==0.0.4"
   ],
   "dependencies": [],
-  "codeowners": []
+  "codeowners": [
+    "@danielsjf"
+  ]
 }
