@@ -2,7 +2,7 @@
 # When updating this file, please also update virtualization/Docker/Dockerfile.dev
 # This way, the development image and the production image are kept in sync.
 
-FROM python:3.7
+FROM python:3.7-buster
 LABEL maintainer="Paulus Schoutsen <Paulus@PaulusSchoutsen.nl>"
 
 # Uncomment any of the following lines to disable the installation.
@@ -13,6 +13,7 @@ LABEL maintainer="Paulus Schoutsen <Paulus@PaulusSchoutsen.nl>"
 #ENV INSTALL_SSOCR no
 #ENV INSTALL_DLIB no
 #ENV INSTALL_IPERF3 no
+#ENV INSTALL_LOCALES no
 
 VOLUME /config
 
@@ -25,7 +26,7 @@ RUN virtualization/Docker/setup_docker_prereqs
 # Install hass component dependencies
 COPY requirements_all.txt requirements_all.txt
 RUN pip3 install --no-cache-dir -r requirements_all.txt && \
-    pip3 install --no-cache-dir mysqlclient psycopg2 uvloop==0.12.2 cchardet cython tensorflow
+    pip3 install --no-cache-dir mysqlclient psycopg2 cchardet cython tensorflow
 
 # Copy source
 COPY . .
