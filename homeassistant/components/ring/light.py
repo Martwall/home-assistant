@@ -1,9 +1,11 @@
 """This component provides HA switch support for Ring Door Bell/Chimes."""
+from datetime import timedelta
 import logging
-from datetime import datetime, timedelta
+
 from homeassistant.components.light import Light
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+import homeassistant.util.dt as dt_util
 
 from . import DATA_RING_STICKUP_CAMS, SIGNAL_UPDATE_RING
 
@@ -41,7 +43,7 @@ class RingLight(Light):
         self._device = device
         self._unique_id = self._device.id
         self._light_on = False
-        self._no_updates_until = datetime.now()
+        self._no_updates_until = dt_util.utcnow()
 
     async def async_added_to_hass(self):
         """Register callbacks."""
@@ -56,7 +58,7 @@ class RingLight(Light):
     @property
     def name(self):
         """Name of the light."""
-        return "{} light".format(self._device.name)
+        return f"{self._device.name} light"
 
     @property
     def unique_id(self):
@@ -77,7 +79,7 @@ class RingLight(Light):
         """Update light state, and causes HASS to correctly update."""
         self._device.lights = new_state
         self._light_on = new_state == ON_STATE
-        self._no_updates_until = datetime.now() + SKIP_UPDATES_DELAY
+        self._no_updates_until = dt_util.utcnow() + SKIP_UPDATES_DELAY
         self.async_schedule_update_ha_state(True)
 
     def turn_on(self, **kwargs):
@@ -90,7 +92,7 @@ class RingLight(Light):
 
     def update(self):
         """Update current state of the light."""
-        if self._no_updates_until > datetime.now():
+        if self._no_updates_until > dt_util.utcnow():
             _LOGGER.debug("Skipping update...")
             return
 

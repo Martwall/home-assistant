@@ -6,26 +6,24 @@ import attr
 import voluptuous as vol
 
 from homeassistant import loader
-from homeassistant.core import HomeAssistant
 from homeassistant.config import (
     CONF_CORE,
-    CORE_CONFIG_SCHEMA,
     CONF_PACKAGES,
-    merge_packages_config,
+    CORE_CONFIG_SCHEMA,
     _format_config_error,
+    config_per_platform,
+    extract_domain_configs,
     find_config_file,
     load_yaml_config_file,
-    extract_domain_configs,
-    config_per_platform,
+    merge_packages_config,
 )
-from homeassistant.requirements import (
-    async_get_integration_with_requirements,
-    RequirementsNotFound,
-)
-
-import homeassistant.util.yaml.loader as yaml_loader
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-
+from homeassistant.requirements import (
+    RequirementsNotFound,
+    async_get_integration_with_requirements,
+)
+import homeassistant.util.yaml.loader as yaml_loader
 
 # mypy: allow-untyped-calls, allow-untyped-defs, no-warn-return-any
 
@@ -36,7 +34,7 @@ CheckConfigError = namedtuple("CheckConfigError", "message domain config")
 class HomeAssistantConfig(OrderedDict):
     """Configuration result with errors attribute."""
 
-    errors = attr.ib(default=attr.Factory(list))  # type: List[CheckConfigError]
+    errors: List[CheckConfigError] = attr.ib(default=attr.Factory(list))
 
     def add_error(self, message, domain=None, config=None):
         """Add a single error."""
@@ -62,7 +60,7 @@ async def async_check_ha_config_file(hass: HomeAssistant) -> HomeAssistantConfig
         message = "Package {} setup failed. Component {} {}".format(
             package, component, message
         )
-        domain = "homeassistant.packages.{}.{}".format(package, component)
+        domain = f"homeassistant.packages.{package}.{component}"
         pack_config = core_config[CONF_PACKAGES].get(package, config)
         result.add_error(message, domain, pack_config)
 
@@ -77,9 +75,9 @@ async def async_check_ha_config_file(hass: HomeAssistant) -> HomeAssistantConfig
             return result.add_error("File configuration.yaml not found.")
         config = await hass.async_add_executor_job(load_yaml_config_file, config_path)
     except FileNotFoundError:
-        return result.add_error("File not found: {}".format(config_path))
+        return result.add_error(f"File not found: {config_path}")
     except HomeAssistantError as err:
-        return result.add_error("Error loading {}: {}".format(config_path, err))
+        return result.add_error(f"Error loading {config_path}: {err}")
     finally:
         yaml_loader.clear_secret_cache()
 
@@ -106,13 +104,13 @@ async def async_check_ha_config_file(hass: HomeAssistant) -> HomeAssistantConfig
         try:
             integration = await async_get_integration_with_requirements(hass, domain)
         except (RequirementsNotFound, loader.IntegrationNotFound) as ex:
-            result.add_error("Component error: {} - {}".format(domain, ex))
+            result.add_error(f"Component error: {domain} - {ex}")
             continue
 
         try:
             component = integration.get_component()
         except ImportError as ex:
-            result.add_error("Component error: {} - {}".format(domain, ex))
+            result.add_error(f"Component error: {domain} - {ex}")
             continue
 
         config_schema = getattr(component, "CONFIG_SCHEMA", None)
@@ -159,7 +157,7 @@ async def async_check_ha_config_file(hass: HomeAssistant) -> HomeAssistantConfig
                 RequirementsNotFound,
                 ImportError,
             ) as ex:
-                result.add_error("Platform error {}.{} - {}".format(domain, p_name, ex))
+                result.add_error(f"Platform error {domain}.{p_name} - {ex}")
                 continue
 
             # Validate platform specific schema
@@ -168,7 +166,7 @@ async def async_check_ha_config_file(hass: HomeAssistant) -> HomeAssistantConfig
                 try:
                     p_validated = platform_schema(p_validated)
                 except vol.Invalid as ex:
-                    _comp_error(ex, "{}.{}".format(domain, p_name), p_validated)
+                    _comp_error(ex, f"{domain}.{p_name}", p_validated)
                     continue
 
             platforms.append(p_validated)

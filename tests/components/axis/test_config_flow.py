@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 from homeassistant.components import axis
 from homeassistant.components.axis import config_flow
 
-from tests.common import mock_coro, MockConfigEntry
+from tests.common import MockConfigEntry, mock_coro
 
 
 async def test_configured_devices(hass):
@@ -186,6 +186,7 @@ async def test_zeroconf_flow(hass):
             data={
                 config_flow.CONF_HOST: "1.2.3.4",
                 config_flow.CONF_PORT: 80,
+                "hostname": "name",
                 "properties": {"macaddress": "00408C12345"},
             },
             context={"source": "zeroconf"},
@@ -319,6 +320,7 @@ async def test_zeroconf_flow_bad_config_file(hass):
             config_flow.DOMAIN,
             data={
                 config_flow.CONF_HOST: "1.2.3.4",
+                "hostname": "name",
                 "properties": {"macaddress": "00408C12345"},
             },
             context={"source": "zeroconf"},

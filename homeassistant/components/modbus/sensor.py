@@ -1,8 +1,8 @@
 """Support for Modbus Register sensors."""
 import logging
 import struct
-
 from typing import Any, Union
+
 import voluptuous as vol
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA
@@ -54,7 +54,7 @@ def number(value: Any) -> Union[int, float]:
         value = float(value)
         return value
     except (TypeError, ValueError):
-        raise vol.Invalid("invalid number {}".format(value))
+        raise vol.Invalid(f"invalid number {value}")
 
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(

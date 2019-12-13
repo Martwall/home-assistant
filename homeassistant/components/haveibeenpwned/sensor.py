@@ -7,7 +7,7 @@ import requests
 import voluptuous as vol
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.const import CONF_EMAIL, CONF_API_KEY, ATTR_ATTRIBUTION
+from homeassistant.const import ATTR_ATTRIBUTION, CONF_API_KEY, CONF_EMAIL
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import track_point_in_time
@@ -61,7 +61,7 @@ class HaveIBeenPwnedSensor(Entity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Breaches {}".format(self._email)
+        return f"Breaches {self._email}"
 
     @property
     def unit_of_measurement(self):
@@ -151,7 +151,7 @@ class HaveIBeenPwnedData:
     def update(self, **kwargs):
         """Get the latest data for current email from REST service."""
         try:
-            url = "{}{}?truncateResponse=false".format(URL, self._email)
+            url = f"{URL}{self._email}?truncateResponse=false"
             header = {USER_AGENT: HA_USER_AGENT, "hibp-api-key": self._api_key}
             _LOGGER.debug("Checking for breaches for email: %s", self._email)
             req = requests.get(url, headers=header, allow_redirects=True, timeout=5)

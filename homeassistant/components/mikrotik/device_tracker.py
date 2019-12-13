@@ -5,18 +5,19 @@ from homeassistant.components.device_tracker import (
     DOMAIN as DEVICE_TRACKER,
     DeviceScanner,
 )
-from homeassistant.util import slugify
 from homeassistant.const import CONF_METHOD
+from homeassistant.util import slugify
+
 from .const import (
-    HOSTS,
-    MIKROTIK,
-    CONF_ARP_PING,
-    MIKROTIK_SERVICES,
-    CAPSMAN,
-    WIRELESS,
-    DHCP,
     ARP,
     ATTR_DEVICE_TRACKER,
+    CAPSMAN,
+    CONF_ARP_PING,
+    DHCP,
+    HOSTS,
+    MIKROTIK,
+    MIKROTIK_SERVICES,
+    WIRELESS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -132,8 +133,9 @@ class MikrotikScanner(DeviceScanner):
                 if self.arp_ping and self.devices_arp:
                     if mac not in self.devices_arp:
                         continue
+                    ip_address = self.devices_arp[mac]["address"]
                     interface = self.devices_arp[mac]["interface"]
-                    if not self.do_arp_ping(mac, interface):
+                    if not self.do_arp_ping(ip_address, interface):
                         continue
 
             attrs = {}
@@ -148,20 +150,19 @@ class MikrotikScanner(DeviceScanner):
             for attr in ATTR_DEVICE_TRACKER:
                 if attr in device and device[attr] is not None:
                     attrs[slugify(attr)] = device[attr]
-
             attrs["scanner_type"] = self.method
             attrs["scanner_host"] = self.host
             attrs["scanner_hostname"] = self.hostname
             self.device_tracker[mac] = attrs
 
-    def do_arp_ping(self, mac, interface):
+    def do_arp_ping(self, ip_address, interface):
         """Attempt to arp ping MAC address via interface."""
         params = {
             "arp-ping": "yes",
             "interval": "100ms",
             "count": 3,
             "interface": interface,
-            "address": mac,
+            "address": ip_address,
         }
         cmd = "/ping"
         data = self.api.command(cmd, params)

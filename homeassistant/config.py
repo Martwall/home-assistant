@@ -1,84 +1,77 @@
 """Module to help with parsing and generating configuration files."""
-from collections import OrderedDict
-
 # pylint: disable=no-name-in-module
+from collections import OrderedDict
 from distutils.version import LooseVersion  # pylint: disable=import-error
 import logging
 import os
 import re
 import shutil
-from typing import (  # noqa: F401 pylint: disable=unused-import
-    Any,
-    Tuple,
-    Optional,
-    Dict,
-    List,
-    Union,
-    Callable,
-    Sequence,
-    Set,
-)
 from types import ModuleType
+from typing import Any, Callable, Dict, Optional, Sequence, Set, Tuple, Union
+
 import voluptuous as vol
 from voluptuous.humanize import humanize_error
 
 from homeassistant import auth
 from homeassistant.auth import (
-    providers as auth_providers,
     mfa_modules as auth_mfa_modules,
+    providers as auth_providers,
 )
 from homeassistant.const import (
+    ATTR_ASSUMED_STATE,
     ATTR_FRIENDLY_NAME,
     ATTR_HIDDEN,
-    ATTR_ASSUMED_STATE,
+    CONF_AUTH_MFA_MODULES,
+    CONF_AUTH_PROVIDERS,
+    CONF_CUSTOMIZE,
+    CONF_CUSTOMIZE_DOMAIN,
+    CONF_CUSTOMIZE_GLOB,
+    CONF_ELEVATION,
+    CONF_ID,
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_NAME,
     CONF_PACKAGES,
-    CONF_UNIT_SYSTEM,
-    CONF_TIME_ZONE,
-    CONF_ELEVATION,
-    CONF_UNIT_SYSTEM_IMPERIAL,
     CONF_TEMPERATURE_UNIT,
+    CONF_TIME_ZONE,
+    CONF_TYPE,
+    CONF_UNIT_SYSTEM,
+    CONF_UNIT_SYSTEM_IMPERIAL,
+    CONF_WHITELIST_EXTERNAL_DIRS,
     TEMP_CELSIUS,
     __version__,
-    CONF_CUSTOMIZE,
-    CONF_CUSTOMIZE_DOMAIN,
-    CONF_CUSTOMIZE_GLOB,
-    CONF_WHITELIST_EXTERNAL_DIRS,
-    CONF_AUTH_PROVIDERS,
-    CONF_AUTH_MFA_MODULES,
-    CONF_TYPE,
-    CONF_ID,
 )
 from homeassistant.core import DOMAIN as CONF_CORE, SOURCE_YAML, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_per_platform, extract_domain_configs
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.entity_values import EntityValues
 from homeassistant.loader import Integration, IntegrationNotFound
 from homeassistant.requirements import (
-    async_get_integration_with_requirements,
     RequirementsNotFound,
+    async_get_integration_with_requirements,
 )
-from homeassistant.util.yaml import load_yaml, SECRET_YAML
 from homeassistant.util.package import is_docker_env
-import homeassistant.helpers.config_validation as cv
 from homeassistant.util.unit_system import IMPERIAL_SYSTEM, METRIC_SYSTEM
-from homeassistant.helpers.entity_values import EntityValues
-from homeassistant.helpers import config_per_platform, extract_domain_configs
+from homeassistant.util.yaml import SECRET_YAML, load_yaml
 
 _LOGGER = logging.getLogger(__name__)
 
 DATA_PERSISTENT_ERRORS = "bootstrap_persistent_errors"
 RE_YAML_ERROR = re.compile(r"homeassistant\.util\.yaml")
 RE_ASCII = re.compile(r"\033\[[^m]*m")
-HA_COMPONENT_URL = "[{}](https://home-assistant.io/components/{}/)"
+HA_COMPONENT_URL = "[{}](https://home-assistant.io/integrations/{}/)"
 YAML_CONFIG_FILE = "configuration.yaml"
 VERSION_FILE = ".HA_VERSION"
 CONFIG_DIR_NAME = ".homeassistant"
 DATA_CUSTOMIZE = "hass_customize"
 
-FILE_MIGRATION = (("ios.conf", ".ios.conf"),)
+GROUP_CONFIG_PATH = "groups.yaml"
+AUTOMATION_CONFIG_PATH = "automations.yaml"
+SCRIPT_CONFIG_PATH = "scripts.yaml"
+SCENE_CONFIG_PATH = "scenes.yaml"
 
-DEFAULT_CONFIG = """
+DEFAULT_CONFIG = f"""
 # Configure a default setup of Home Assistant (frontend, api, etc)
 default_config:
 
@@ -90,9 +83,10 @@ default_config:
 tts:
   - platform: google_translate
 
-group: !include groups.yaml
-automation: !include automations.yaml
-script: !include scripts.yaml
+group: !include {GROUP_CONFIG_PATH}
+automation: !include {AUTOMATION_CONFIG_PATH}
+script: !include {SCRIPT_CONFIG_PATH}
+scene: !include {SCENE_CONFIG_PATH}
 """
 DEFAULT_SECRETS = """
 # Use this file to store secrets like usernames and passwords.
@@ -118,7 +112,7 @@ def _no_duplicate_auth_provider(
     Each type of auth provider can only have one config without optional id.
     Unique id is required if same type of auth provider used multiple times.
     """
-    config_keys = set()  # type: Set[Tuple[str, Optional[str]]]
+    config_keys: Set[Tuple[str, Optional[str]]] = set()
     for config in configs:
         key = (config[CONF_TYPE], config.get(CONF_ID))
         if key in config_keys:
@@ -142,7 +136,7 @@ def _no_duplicate_auth_mfa_module(
     times.
     Note: this is different than auth provider
     """
-    config_keys = set()  # type: Set[str]
+    config_keys: Set[str] = set()
     for config in configs:
         key = config.get(CONF_ID, config[CONF_TYPE])
         if key in config_keys:
@@ -263,18 +257,13 @@ async def async_create_default_config(
 
 def _write_default_config(config_dir: str) -> Optional[str]:
     """Write the default config."""
-    from homeassistant.components.config.group import CONFIG_PATH as GROUP_CONFIG_PATH
-    from homeassistant.components.config.automation import (
-        CONFIG_PATH as AUTOMATION_CONFIG_PATH,
-    )
-    from homeassistant.components.config.script import CONFIG_PATH as SCRIPT_CONFIG_PATH
-
     config_path = os.path.join(config_dir, YAML_CONFIG_FILE)
     secret_path = os.path.join(config_dir, SECRET_YAML)
     version_path = os.path.join(config_dir, VERSION_FILE)
     group_yaml_path = os.path.join(config_dir, GROUP_CONFIG_PATH)
     automation_yaml_path = os.path.join(config_dir, AUTOMATION_CONFIG_PATH)
     script_yaml_path = os.path.join(config_dir, SCRIPT_CONFIG_PATH)
+    scene_yaml_path = os.path.join(config_dir, SCENE_CONFIG_PATH)
 
     # Writing files with YAML does not create the most human readable results
     # So we're hard coding a YAML template.
@@ -297,9 +286,12 @@ def _write_default_config(config_dir: str) -> Optional[str]:
         with open(script_yaml_path, "wt"):
             pass
 
+        with open(scene_yaml_path, "wt"):
+            pass
+
         return config_path
 
-    except IOError:
+    except OSError:
         print("Unable to create default configuration file", config_path)
         return None
 
@@ -317,7 +309,7 @@ async def async_hass_config_yaml(hass: HomeAssistant) -> Dict:
         path = find_config_file(hass.config.config_dir)
         if path is None:
             raise HomeAssistantError(
-                "Config file not found in: {}".format(hass.config.config_dir)
+                f"Config file not found in: {hass.config.config_dir}"
             )
         config = load_yaml_config_file(path)
         return config
@@ -403,7 +395,7 @@ def process_ha_config_upgrade(hass: HomeAssistant) -> None:
             try:
                 with open(config_path, "wt", encoding="utf-8") as config_file:
                     config_file.write(config_raw)
-            except IOError:
+            except OSError:
                 _LOGGER.exception("Migrating to google_translate tts failed")
                 pass
 
@@ -417,16 +409,10 @@ def process_ha_config_upgrade(hass: HomeAssistant) -> None:
     with open(version_path, "wt") as outp:
         outp.write(__version__)
 
-    _LOGGER.debug("Migrating old system configuration files to new locations")
-    for oldf, newf in FILE_MIGRATION:
-        if os.path.isfile(hass.config.path(oldf)):
-            _LOGGER.info("Migrating %s to %s", oldf, newf)
-            os.rename(hass.config.path(oldf), hass.config.path(newf))
-
 
 @callback
 def async_log_exception(
-    ex: vol.Invalid, domain: str, config: Dict, hass: HomeAssistant
+    ex: Exception, domain: str, config: Dict, hass: HomeAssistant
 ) -> None:
     """Log an error for configuration validation.
 
@@ -438,23 +424,26 @@ def async_log_exception(
 
 
 @callback
-def _format_config_error(ex: vol.Invalid, domain: str, config: Dict) -> str:
+def _format_config_error(ex: Exception, domain: str, config: Dict) -> str:
     """Generate log exception for configuration validation.
 
     This method must be run in the event loop.
     """
-    message = "Invalid config for [{}]: ".format(domain)
-    if "extra keys not allowed" in ex.error_message:
-        message += (
-            "[{option}] is an invalid option for [{domain}]. "
-            "Check: {domain}->{path}.".format(
-                option=ex.path[-1],
-                domain=domain,
-                path="->".join(str(m) for m in ex.path),
+    message = f"Invalid config for [{domain}]: "
+    if isinstance(ex, vol.Invalid):
+        if "extra keys not allowed" in ex.error_message:
+            message += (
+                "[{option}] is an invalid option for [{domain}]. "
+                "Check: {domain}->{path}.".format(
+                    option=ex.path[-1],
+                    domain=domain,
+                    path="->".join(str(m) for m in ex.path),
+                )
             )
-        )
+        else:
+            message += "{}.".format(humanize_error(config, ex))
     else:
-        message += "{}.".format(humanize_error(config, ex))
+        message += str(ex)
 
     try:
         domain_config = config.get(domain, config)
@@ -467,20 +456,16 @@ def _format_config_error(ex: vol.Invalid, domain: str, config: Dict) -> str:
     )
 
     if domain != CONF_CORE:
+        integration = domain.split(".")[-1]
         message += (
             "Please check the docs at "
-            "https://home-assistant.io/components/{}/".format(domain)
+            f"https://home-assistant.io/integrations/{integration}/"
         )
 
     return message
 
 
-async def async_process_ha_core_config(
-    hass: HomeAssistant,
-    config: Dict,
-    api_password: Optional[str] = None,
-    trusted_networks: Optional[Any] = None,
-) -> None:
+async def async_process_ha_core_config(hass: HomeAssistant, config: Dict) -> None:
     """Process the [homeassistant] section from the configuration.
 
     This method is a coroutine.
@@ -493,14 +478,6 @@ async def async_process_ha_core_config(
 
         if auth_conf is None:
             auth_conf = [{"type": "homeassistant"}]
-            if api_password:
-                auth_conf.append(
-                    {"type": "legacy_api_password", "api_password": api_password}
-                )
-            if trusted_networks:
-                auth_conf.append(
-                    {"type": "trusted_networks", "trusted_networks": trusted_networks}
-                )
 
         mfa_conf = config.get(
             CONF_AUTH_MFA_MODULES,
@@ -623,7 +600,7 @@ def _identify_config_schema(module: ModuleType) -> Tuple[Optional[str], Optional
 
 def _recursive_merge(conf: Dict[str, Any], package: Dict[str, Any]) -> Union[bool, str]:
     """Merge package into conf, recursively."""
-    error = False  # type: Union[bool, str]
+    error: Union[bool, str] = False
     for key, pack_conf in package.items():
         if isinstance(pack_conf, dict):
             if not pack_conf:
@@ -650,7 +627,6 @@ async def merge_packages_config(
     _log_pkg_error: Callable = _log_pkg_error,
 ) -> Dict:
     """Merge packages into the top-level configuration. Mutate config."""
-    # pylint: disable=too-many-nested-blocks
     PACKAGES_CONFIG_SCHEMA(packages)
     for pack_name, pack_conf in packages.items():
         for comp_name, comp_conf in pack_conf.items():
@@ -705,7 +681,7 @@ async def merge_packages_config(
             error = _recursive_merge(conf=config[comp_name], package=comp_conf)
             if error:
                 _log_pkg_error(
-                    pack_name, comp_name, config, "has duplicate key '{}'".format(error)
+                    pack_name, comp_name, config, f"has duplicate key '{error}'"
                 )
 
     return config
@@ -727,6 +703,24 @@ async def async_process_component_config(
         _LOGGER.error("Unable to import %s: %s", domain, ex)
         return None
 
+    # Check if the integration has a custom config validator
+    config_validator = None
+    try:
+        config_validator = integration.get_platform("config")
+    except ImportError:
+        pass
+    if config_validator is not None and hasattr(
+        config_validator, "async_validate_config"
+    ):
+        try:
+            return await config_validator.async_validate_config(  # type: ignore
+                hass, config
+            )
+        except (vol.Invalid, HomeAssistantError) as ex:
+            async_log_exception(ex, domain, config, hass)
+            return None
+
+    # No custom config validator, proceed with schema validation
     if hasattr(component, "CONFIG_SCHEMA"):
         try:
             return component.CONFIG_SCHEMA(config)  # type: ignore
@@ -771,13 +765,12 @@ async def async_process_component_config(
 
         # Validate platform specific schema
         if hasattr(platform, "PLATFORM_SCHEMA"):
-            # pylint: disable=no-member
             try:
                 p_validated = platform.PLATFORM_SCHEMA(  # type: ignore
                     p_config
                 )
             except vol.Invalid as ex:
-                async_log_exception(ex, "{}.{}".format(domain, p_name), p_config, hass)
+                async_log_exception(ex, f"{domain}.{p_name}", p_config, hass)
                 continue
 
         platforms.append(p_validated)
@@ -836,7 +829,7 @@ def async_notify_setup_error(
         else:
             part = name
 
-        message += " - {}\n".format(part)
+        message += f" - {part}\n"
 
     message += "\nPlease check your config."
 
