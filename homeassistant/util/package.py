@@ -19,17 +19,21 @@ def is_virtual_env() -> bool:
     """Return if we run in a virtual environtment."""
     # Check supports venv && virtualenv
     
+    return getattr(sys, "base_prefix", sys.prefix) != sys.prefix or hasattr(
+        sys, "real_prefix")
+
+def is_snap() -> bool:
+    """Return if we run in a snap environment."""
     # Testing if it is installed as a snap
+    
     is_snap = False
     for path in sys.path:
         dirs = path.split('/')
         for d in dirs:
             if d == "snap":
                 is_snap = True
-    
-    return getattr(sys, "base_prefix", sys.prefix) != sys.prefix or hasattr(
-        sys, "real_prefix") or is_snap
-
+                
+    return is_snap
 
 def is_docker_env() -> bool:
     """Return True if we run in a docker env."""
