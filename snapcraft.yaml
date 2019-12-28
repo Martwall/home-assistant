@@ -6,7 +6,7 @@ description: |
   Home assistant is an "open source home automation that puts local control and privacy first". 
   This snap intends to follow the minor releases of Home Assistant and make them installable
   as a snap. Versioning will follow the Home Assistant releases.  
-icon: ../ha_fork_icon.png
+icon: ./ha_fork_icon.png
 grade: devel 
 confinement: strict 
 
@@ -59,4 +59,8 @@ apps:
       - network-bind
     environment:
       PYTHONPATH: $SNAP_USER_DATA
+
+architectures:
+  - build-on: [amd64]
+    run-on: [amd64, armhf]
 

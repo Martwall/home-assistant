@@ -15,25 +15,24 @@ from importlib_metadata import version, PackageNotFoundError
 _LOGGER = logging.getLogger(__name__)
 
 
-def is_virtual_env() -> bool:
-    """Return if we run in a virtual environtment."""
-    # Check supports venv && virtualenv
-    
-    return getattr(sys, "base_prefix", sys.prefix) != sys.prefix or hasattr(
-        sys, "real_prefix")
-
 def is_snap() -> bool:
     """Return if we run in a snap environment."""
     # Testing if it is installed as a snap
-    
     is_snap = False
-    for path in sys.path:
-        dirs = path.split('/')
-        for d in dirs:
-            if d == "snap":
-                is_snap = True
-                
+    if os.environ.get('SNAP'):
+        is_snap = True
     return is_snap
+
+
+def is_virtual_env() -> bool:
+    """Return if we run in a virtual environment."""
+    # Check supports venv && virtualenv && snap
+
+    snap = is_snap()
+
+    return getattr(sys, "base_prefix", sys.prefix) != sys.prefix or hasattr(
+        sys, "real_prefix") or snap
+
 
 def is_docker_env() -> bool:
     """Return True if we run in a docker env."""
@@ -83,6 +82,11 @@ def install_package(
         args += ["--constraint", constraints]
     if find_links is not None:
         args += ["--find-links", find_links, "--prefer-binary"]
+    if is_snap():
+        snap_data_path = os.environ.get('SNAP_USER_DATA')
+        # # snap_package_path = snap_data_path.joinpath('/packages')
+        # os.environ.update()
+        args += ["--target", snap_data_path]
     if target:
         assert not is_virtual_env()
         # This only works if not running in venv

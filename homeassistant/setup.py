@@ -138,6 +138,8 @@ async def _async_setup_component(
         component = integration.get_component()
     except ImportError:
         log_error("Unable to import component", False)
+        # Output reson for error
+        _LOGGER.error("Error: %s", integration.get_component())
         return False
     except Exception:  # pylint: disable=broad-except
         _LOGGER.exception("Setup failed for %s: unknown error", domain)
